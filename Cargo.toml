@@ -1,0 +1,35 @@
+[workspace]
+members = [
+    "poc-3a-rust-wgpu",
+    "poc-3b-rust-vello",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Data / IO
+memmap2    = "0.9"
+memchr     = "2.7"
+
+# Async runtime
+tokio      = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+
+# GPU backends
+wgpu       = { version = "22", features = ["metal"] }
+
+# Font / shaping
+harfbuzz-sys = "0.5"
+rustybuzz    = "0.14"          # pure-Rust HarfBuzz port (no C dep) — swap for harfbuzz-sys if needed
+ttf-parser   = "0.21"
+
+# Collections / cache
+lru        = "0.12"
+
+# Serialization
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Benchmarking
+criterion  = { version = "0.5", features = ["html_reports"] }
+
+# Windowing (for PoC 3A/3B standalone window)
+winit      = "0.29"

@@ -1,0 +1,36 @@
+# ── Generated files ─────────────────────────────
+shared/test-data/test_*.txt
+shared/test-data/*.meta.json
+
+# ── Rust ────────────────────────────────────────
+target/
+**/*.rs.bk
+Cargo.lock          # keep for binaries
+
+# ── Node.js ─────────────────────────────────────
+node_modules/
+dist/
+.cache/
+
+# ── Benchmark results ────────────────────────────
+results/
+poc-*/results/
+
+# ── macOS ────────────────────────────────────────
+.DS_Store
+*.xcuserstate
+*.xcscheme
+
+# ── Xcode / Swift ────────────────────────────────
+*.o
+*.d
+.build/
+DerivedData/
+
+# ── Fonts (download separately) ─────────────────
+shared/fonts/*.ttf
+shared/fonts/*.otf
+
+# ── MSDF Atlas (generated offline) ──────────────
+poc-1d-webgpu-msdf/assets/*.png
+poc-1d-webgpu-msdf/assets/*.bin
