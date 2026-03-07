@@ -1,0 +1,14 @@
+{
+    "name": "poc-1c-webgpu-atlas",
+    "version": "1.0.0",
+    "description": "PoC 1C — WebGPU + Dynamic Texture Atlas (LRU, shelf packing)",
+    "main": "src/main.js",
+    "scripts": {
+        "start": "electron .",
+        "benchmark": "electron . --benchmark"
+    },
+    "dependencies": {
+        "electron": "^30.0.0"
+    },
+    "license": "MIT"
+}
