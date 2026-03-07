@@ -1,0 +1,22 @@
+{
+    "name": "poc-1a-web-dom",
+    "version": "1.0.0",
+    "description": "PoC 1A — Web DOM (Electron) baseline text renderer",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "start:dev": "NODE_ENV=development electron . --inspect",
+        "benchmark": "electron . --benchmark",
+        "benchmark:headless": "electron . --benchmark --headless"
+    },
+    "dependencies": {
+        "electron": "^30.0.0"
+    },
+    "devDependencies": {
+        "electron-builder": "^24.0.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "license": "MIT"
+}

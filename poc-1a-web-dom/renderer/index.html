@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PoC 1A — Web DOM Text Renderer (Baseline)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #1a1b1e;
+      --surface: #25262b;
+      --text:    #c9d1d9;
+      --line-num:#4a5568;
+      --accent:  #58a6ff;
+      --font:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --line-h:  20px; /* overridden by JS from URL param */
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: var(--line-h);
+      overflow: hidden;
+    }
+
+    /* ── Metrics HUD ────────────────────────────────────────────── */
+    #hud {
+      position: fixed;
+      top: 8px; right: 12px;
+      background: rgba(0,0,0,0.75);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #aaa;
+      z-index: 100;
+      min-width: 200px;
+      backdrop-filter: blur(6px);
+    }
+    #hud h3 { font-size: 11px; color: var(--accent); margin-bottom: 4px; }
+    #hud .row { display: flex; justify-content: space-between; gap: 12px; margin: 2px 0; }
+    #hud .val { color: #fff; font-weight: bold; }
+    #hud .drop { color: #f85149; }
+    #hud .ok   { color: #3fb950; }
+
+    /* ── Progress bar (for loading) ─────────────────────────────── */
+    #load-overlay {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 200;
+      gap: 16px;
+    }
+    #load-overlay h1 { font-size: 16px; color: var(--accent); }
+    #load-bar-wrap {
+      width: 300px; height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #load-bar {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    #load-status { font-size: 11px; color: #666; }
+
+    /* ── Viewport scroller ──────────────────────────────────────── */
+    #scroller {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;   /* virtualizer handles scroll internally */
+    }
+
+    /* ── Line pool ──────────────────────────────────────────────── */
+    #line-pool {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      white-space: pre;
+      will-change: transform;
+    }
+
+    .text-line {
+      display: flex;
+      height: var(--line-h);
+      line-height: var(--line-h);
+      padding: 0 8px 0 52px;   /* room for line number */
+      position: absolute;
+      width: 100%;
+      overflow: hidden;
+    }
+    .text-line .ln {
+      position: absolute;
+      left: 0; top: 0;
+      width: 44px;
+      text-align: right;
+      padding-right: 8px;
+      color: var(--line-num);
+      user-select: none;
+      pointer-events: none;
+    }
+    .text-line .content {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="load-overlay">
+  <h1>PoC 1A — Web DOM Renderer</h1>
+  <div id="load-bar-wrap"><div id="load-bar"></div></div>
+  <div id="load-status">Cargando archivo…</div>
+</div>
+
+<!-- Metrics HUD -->
+<div id="hud" style="display:none">
+  <h3>PoC 1A — Web DOM</h3>
+  <div class="row"><span>Frame</span>  <span class="val" id="h-frame">—</span></div>
+  <div class="row"><span>Frame time</span> <span class="val" id="h-ft">—</span></div>
+  <div class="row"><span>Scroll</span> <span class="val" id="h-scroll">—</span></div>
+  <div class="row"><span>Lines vis.</span> <span class="val" id="h-lines">—</span></div>
+  <div class="row"><span>Dropped</span> <span class="val drop" id="h-drop">0</span></div>
+  <div class="row"><span>P95 (ms)</span><span class="val" id="h-p95">—</span></div>
+</div>
+
+<!-- Main scroll viewport -->
+<div id="scroller">
+  <div id="line-pool"></div>
+</div>
+
+<script src="metrics.js"></script>
+<script src="virtualizer.js"></script>
+<script>
+  // ── Boostrap ────────────────────────────────────────────────────────────
+  (async () => {
+    const params = new URLSearchParams(window.location.search);
+    const FILE_PATH     = params.get('file')         || '';
+    const DO_BENCH      = params.get('benchmark') === '1';
+    const SCROLL_PX     = parseFloat(params.get('scrollPx'))    || 60;
+    const SCROLL_FRAMES = parseInt(params.get('scrollFrames'))   || 3600;
+    const LINE_H        = parseFloat(params.get('lineHeight'))   || 20;
+
+    // Apply line-height CSS var
+    document.documentElement.style.setProperty('--line-h', LINE_H + 'px');
+
+    const overlay = document.getElementById('load-overlay');
+    const loadBar = document.getElementById('load-bar');
+    const loadStatus = document.getElementById('load-status');
+    const hud = document.getElementById('hud');
+
+    // ── Load file via Node.js (no IPC) ──────────────────────────────────
+    const { ipcRenderer } = require('electron');
+    const fs = require('fs');
+    const path = require('path');
+
+    const t_load_start = performance.now();
+    loadStatus.textContent = `Leyendo ${path.basename(FILE_PATH)}…`;
+
+    let fileContent = '';
+    try {
+      // Read in 4 MB chunks and concatenate (simulates streaming, avoids OOM on V8)
+      const CHUNK = 4 * 1024 * 1024;
+      const fd = fs.openSync(FILE_PATH, 'r');
+      const stat = fs.fstatSync(fd);
+      const total = stat.size;
+      let offset = 0;
+      const chunks = [];
+
+      while (offset < total) {
+        const buf = Buffer.alloc(Math.min(CHUNK, total - offset));
+        const bytesRead = fs.readSync(fd, buf, 0, buf.length, offset);
+        chunks.push(buf.slice(0, bytesRead).toString('utf8'));
+        offset += bytesRead;
+        loadBar.style.width = Math.round(100 * offset / total) + '%';
+        loadStatus.textContent = `${(offset / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)} MB…`;
+        // Yield to allow UI update
+        await new Promise(r => setTimeout(r, 0));
+      }
+      fs.closeSync(fd);
+      fileContent = chunks.join('');
+    } catch (err) {
+      loadStatus.textContent = `Error: ${err.message}`;
+      console.error(err);
+      return;
+    }
+
+    const t_load_end = performance.now();
+    const load_ms = t_load_end - t_load_start;
+    ipcRenderer.send('log', `File loaded in ${load_ms.toFixed(1)}ms`);
+
+    // Split into lines (only once; array is reused by the virtualizer)
+    loadStatus.textContent = 'Indexando líneas…';
+    await new Promise(r => setTimeout(r, 0));
+
+    const t_split_start = performance.now();
+    const lines = fileContent.split('\n');
+    const split_ms = performance.now() - t_split_start;
+    ipcRenderer.send('log', `Line split: ${lines.length} lines in ${split_ms.toFixed(1)}ms`);
+
+    // Free the source string now that we have the lines array
+    fileContent = null;
+
+    // ── Start virtualizer ────────────────────────────────────────────────
+    overlay.style.display = 'none';
+    hud.style.display = 'block';
+
+    const metrics = new FrameMetrics('1a-web-dom');
+    const virt = new DOMVirtualizer({
+      container: document.getElementById('scroller'),
+      pool:      document.getElementById('line-pool'),
+      lines,
+      lineHeight: LINE_H,
+      metrics,
+    });
+
+    virt.render(0);  // initial render at scroll 0
+
+    // ── Interactive mode ────────────────────────────────────────────────
+    if (!DO_BENCH) {
+      window.addEventListener('wheel', e => {
+        e.preventDefault();
+        virt.scrollBy(e.deltaY);
+      }, { passive: false });
+
+      window.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown') virt.scrollBy(LINE_H);
+        if (e.key === 'ArrowUp')   virt.scrollBy(-LINE_H);
+        if (e.key === 'PageDown')  virt.scrollBy(window.innerHeight);
+        if (e.key === 'PageUp')    virt.scrollBy(-window.innerHeight);
+      });
+      return;
+    }
+
+    // ── Synthetic scroll benchmark ──────────────────────────────────────
+    ipcRenderer.send('log', `Starting benchmark: ${SCROLL_FRAMES} frames, ${SCROLL_PX}px/frame`);
+    let frame = 0;
+
+    function benchFrame() {
+      if (frame >= SCROLL_FRAMES) {
+        const report = metrics.report(load_ms, split_ms, lines.length);
+        ipcRenderer.send('benchmark-complete', report);
+        return;
+      }
+      const t0 = performance.now();
+      virt.scrollBy(SCROLL_PX);
+
+      // Update HUD every 60 frames
+      if (frame % 60 === 0) {
+        const snap = metrics.snapshot();
+        document.getElementById('h-frame').textContent  = frame;
+        document.getElementById('h-ft').textContent     = snap.lastFrameMs.toFixed(2) + ' ms';
+        document.getElementById('h-scroll').textContent = Math.round(virt.scrollY) + ' px';
+        document.getElementById('h-lines').textContent  = snap.linesVisible;
+        document.getElementById('h-drop').textContent   = snap.droppedFrames;
+        document.getElementById('h-p95').textContent    = snap.p95Ms.toFixed(2);
+      }
+
+      frame++;
+      requestAnimationFrame(benchFrame);
+    }
+
+    // Give the renderer 3 frames to settle before starting
+    let warmup = 3;
+    function warmupFrame() {
+      warmup--;
+      if (warmup <= 0) requestAnimationFrame(benchFrame);
+      else requestAnimationFrame(warmupFrame);
+    }
+    requestAnimationFrame(warmupFrame);
+  })();
+</script>
+</body>
+</html>
