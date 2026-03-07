@@ -1,0 +1,38 @@
+[package]
+name    = "poc-3a-rust-wgpu"
+version = "0.1.0"
+edition = "2021"
+description = "PoC 3A — Rust + wgpu (Metal backend) + HarfBuzz/rustybuzz text shaping"
+
+[[bin]]
+name = "poc3a"
+path = "src/main.rs"
+
+[[bench]]
+name    = "synthetic_scroll"
+harness = false
+
+[dependencies]
+memmap2    = { workspace = true }
+memchr     = { workspace = true }
+tokio      = { workspace = true }
+wgpu       = { workspace = true }
+rustybuzz  = { workspace = true }
+ttf-parser = { workspace = true }
+lru        = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+winit      = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+panic         = "abort"
+
+[profile.bench]
+opt-level = 3
+lto       = "thin"
