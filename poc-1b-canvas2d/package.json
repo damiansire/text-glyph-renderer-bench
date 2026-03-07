@@ -1,0 +1,14 @@
+{
+    "name": "poc-1b-canvas2d",
+    "version": "1.0.0",
+    "description": "PoC 1B — Canvas 2D API + OffscreenCanvas Worker text renderer",
+    "main": "src/main.js",
+    "scripts": {
+        "start": "electron .",
+        "benchmark": "electron . --benchmark"
+    },
+    "dependencies": {
+        "electron": "^30.0.0"
+    },
+    "license": "MIT"
+}

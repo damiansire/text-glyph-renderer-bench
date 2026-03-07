@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>PoC 1B — Canvas 2D Text Renderer</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            background: #1a1b1e;
+            overflow: hidden;
+        }
+
+        #hud {
+            position: fixed;
+            top: 8px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font: 11px/1.6 monospace;
+            color: #aaa;
+            z-index: 100;
+            min-width: 200px;
+            backdrop-filter: blur(6px);
+        }
+
+        #hud h3 {
+            font-size: 11px;
+            color: #58a6ff;
+            margin-bottom: 4px;
+        }
+
+        #hud .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        #hud .val {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        #hud .drop {
+            color: #f85149;
+        }
+
+        #load-overlay {
+            position: fixed;
+            inset: 0;
+            background: #1a1b1e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 200;
+        }
+
+        #load-overlay h1 {
+            font: 16px monospace;
+            color: #58a6ff;
+        }
+
+        #load-bar-wrap {
+            width: 300px;
+            height: 6px;
+            background: #25262b;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        #load-bar {
+            height: 100%;
+            background: #58a6ff;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        #load-status {
+            font: 11px monospace;
+            color: #666;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            /* The canvas size in device pixels is set by JS */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="load-overlay">
+        <h1>PoC 1B — Canvas 2D Renderer</h1>
+        <div id="load-bar-wrap">
+            <div id="load-bar"></div>
+        </div>
+        <div id="load-status">Iniciando…</div>
+    </div>
+    <div id="hud" style="display:none">
+        <h3>PoC 1B — Canvas 2D</h3>
+        <div class="row"><span>Frame</span> <span class="val" id="h-frame">—</span></div>
+        <div class="row"><span>Frame time</span><span class="val" id="h-ft">—</span></div>
+        <div class="row"><span>Scroll</span> <span class="val" id="h-scroll">—</span></div>
+        <div class="row"><span>Dropped</span> <span class="val drop" id="h-drop">0</span></div>
+        <div class="row"><span>P95 (ms)</span> <span class="val" id="h-p95">—</span></div>
+    </div>
+    <canvas id="main-canvas"></canvas>
+
+    <script>
+        (async () => {
+            const params = new URLSearchParams(window.location.search);
+            const FILE = params.get('file') || '';
+            const DO_BENCH = params.get('benchmark') === '1';
+            const SCROLL_PX = parseFloat(params.get('scrollPx')) || 60;
+            const FRAMES = parseInt(params.get('scrollFrames')) || 3600;
+            const LINE_H = parseFloat(params.get('lineHeight')) || 20;
+
+            const { ipcRenderer } = require('electron');
+            const fs = require('fs');
+            const path = require('path');
+
+            const overlay = document.getElementById('load-overlay');
+            const loadBar = document.getElementById('load-bar');
+            const loadStatus = document.getElementById('load-status');
+            const hud = document.getElementById('hud');
+            const mainCanvas = document.getElementById('main-canvas');
+
+            // ── Size canvas to device pixels (Retina support) ──────────────────────
+            const DPR = window.devicePixelRatio || 1;
+            mainCanvas.width = Math.round(window.innerWidth * DPR);
+            mainCanvas.height = Math.round(window.innerHeight * DPR);
+            mainCanvas.style.width = window.innerWidth + 'px';
+            mainCanvas.style.height = window.innerHeight + 'px';
+
+            // ── Load file ────────────────────────────────────────────────────────────
+            const t_load = performance.now();
+            loadStatus.textContent = `Leyendo ${path.basename(FILE)}…`;
+            const CHUNK = 4 * 1024 * 1024;
+            const fd = fs.openSync(FILE, 'r');
+            const size = fs.fstatSync(fd).size;
+            const chunks = [];
+            let offset = 0;
+            while (offset < size) {
+                const buf = Buffer.alloc(Math.min(CHUNK, size - offset));
+                const read = fs.readSync(fd, buf, 0, buf.length, offset);
+                chunks.push(buf.slice(0, read).toString('utf8'));
+                offset += read;
+                loadBar.style.width = Math.round(100 * offset / size) + '%';
+                loadStatus.textContent = `${(offset / 1e6).toFixed(1)} / ${(size / 1e6).toFixed(1)} MB`;
+                await new Promise(r => setTimeout(r, 0));
+            }
+            fs.closeSync(fd);
+            const content = chunks.join('');
+            const load_ms = performance.now() - t_load;
+
+            loadStatus.textContent = 'Split de líneas…';
+            await new Promise(r => setTimeout(r, 0));
+            const t_split = performance.now();
+            const lines = content.split('\n');
+            const split_ms = performance.now() - t_split;
+            ipcRenderer.send('log', `1B: ${lines.length} líneas en ${split_ms.toFixed(1)}ms`);
+
+            // ── Spin up the OffscreenCanvas worker ──────────────────────────────────
+            loadStatus.textContent = 'Iniciando Worker…';
+            await new Promise(r => setTimeout(r, 0));
+            const offscreen = mainCanvas.transferControlToOffscreen();
+            const worker = new Worker('./src/worker.js');
+
+            // Send canvas + lines to worker (canvas is a Transferable)
+            worker.postMessage({
+                type: 'init',
+                data: { canvas: offscreen, lines, lineHeight: LINE_H }
+            }, [offscreen]);
+
+            // Wait for worker ready
+            await new Promise(resolve => {
+                worker.onmessage = (e) => { if (e.data.type === 'ready') resolve(); };
+            });
+
+            overlay.style.display = 'none';
+            hud.style.display = 'block';
+
+            // ── Metrics ────────────────────────────────────────────────────────────
+            const BUDGET_MS = 1000 / 120;
+            const frameTimes = [];
+            let dropped = 0, frameIndex = 0, scrollY = 0;
+            let lastFrameMs = 0;
+
+            // Worker reports frame timing back
+            worker.onmessage = (e) => {
+                if (e.data.type !== 'frame-done') return;
+                const { frameMs, linesVisible } = e.data;
+                lastFrameMs = frameMs;
+                frameTimes.push(frameMs);
+                if (frameMs > BUDGET_MS) dropped++;
+            };
+
+            function send(sy) {
+                worker.postMessage({
+                    type: 'render',
+                    data: { scrollY: sy, viewportW: mainCanvas.width, viewportH: mainCanvas.height }
+                });
+            }
+
+            // ── Interactive mode ───────────────────────────────────────────────────
+            if (!DO_BENCH) {
+                send(0);
+                window.addEventListener('wheel', e => {
+                    e.preventDefault();
+                    scrollY = Math.max(0, scrollY + e.deltaY);
+                    send(scrollY);
+                }, { passive: false });
+                return;
+            }
+
+            // ── Benchmark mode ─────────────────────────────────────────────────────
+            const totalH = lines.length * LINE_H;
+            let frame = 0;
+
+            function benchFrame() {
+                if (frame >= FRAMES) {
+                    const n = frameTimes.length;
+                    const sorted = [...frameTimes].sort((a, b) => a - b);
+                    const p = pct => sorted[Math.floor(n * pct / 100)] || 0;
+                    const result = {
+                        poc_id: '1b-canvas2d',
+                        file: { line_count: lines.length, load_ms: +load_ms.toFixed(2), split_ms: +split_ms.toFixed(2) },
+                        benchmark: {
+                            total_frames: n, dropped_frames: dropped,
+                            drop_rate_pct: +(dropped / n * 100).toFixed(2),
+                            p50_ms: +p(50).toFixed(3), p95_ms: +p(95).toFixed(3),
+                            p99_ms: +p(99).toFixed(3), budget_ms: BUDGET_MS,
+                        }
+                    };
+                    ipcRenderer.send('benchmark-complete', result);
+                    return;
+                }
+
+                send(scrollY);
+                scrollY += SCROLL_PX;
+                if (scrollY + window.innerHeight > totalH) scrollY = 0;
+
+                if (frame % 60 === 0) {
+                    const n = frameTimes.length, sorted = [...frameTimes].sort((a, b) => a - b);
+                    document.getElementById('h-frame').textContent = frame;
+                    document.getElementById('h-ft').textContent = lastFrameMs.toFixed(2) + ' ms';
+                    document.getElementById('h-scroll').textContent = Math.round(scrollY) + 'px';
+                    document.getElementById('h-drop').textContent = dropped;
+                    document.getElementById('h-p95').textContent = (sorted[Math.floor(n * .95)] || 0).toFixed(2);
+                }
+                frame++;
+                requestAnimationFrame(benchFrame);
+            }
+            requestAnimationFrame(benchFrame);
+        })();
+    </script>
+</body>
+
+</html>
