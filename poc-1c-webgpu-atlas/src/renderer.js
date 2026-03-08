@@ -64,7 +64,6 @@ class GlyphRenderer {
         });
 
         await this._buildPipeline(format);
-        this._buildBuffers();
         return this._device;
     }
 

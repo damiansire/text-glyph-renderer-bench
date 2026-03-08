@@ -10,7 +10,7 @@ function parseArgs() {
     const argv = process.argv.slice(2);
     const a = {
         benchmark: false,
-        file: path.join(__dirname, '..', 'shared', 'test-data', 'test_100mb.txt'),
+        file: path.join(__dirname, '..', '..', 'shared', 'test-data', 'test_100mb.txt'),
         scrollPx: 60, scrollFrames: 3600, lineHeight: 20,
     };
     for (let i = 0; i < argv.length; i++) {
@@ -41,7 +41,7 @@ app.whenReady().then(() => {
         file: cli.file, benchmark: cli.benchmark ? '1' : '0',
         scrollPx: cli.scrollPx, scrollFrames: cli.scrollFrames, lineHeight: cli.lineHeight,
     });
-    win.loadURL(`file://${path.join(__dirname, 'index.html')}?${p}`);
+    win.loadURL(`file://${path.join(__dirname, '..', 'index.html')}?${p}`);
 });
 
 ipcMain.on('benchmark-complete', (_e, stats) => {

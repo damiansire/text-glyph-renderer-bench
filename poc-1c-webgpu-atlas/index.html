@@ -184,14 +184,13 @@
             ls.textContent = 'Iniciando WebGPU…';
 
             // TextureAtlas needs a device; GlyphRenderer creates the device.
-            // We create the renderer first, then pass device to atlas.
+            // We create the renderer first, let it init the device, then construct the atlas and attach it.
             const renderer = new GlyphRenderer();
-            // Temporary adapter for atlas device (renderer.init creates the real device)
-            const tempAdapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-            const device = await tempAdapter.requestDevice();
+            const device = await renderer.init(canvas, null); // temporarily pass null for atlas
 
             const atlas = new TextureAtlas(device);
-            await renderer.init(canvas, atlas);
+            renderer._atlas = atlas; // attach the created atlas explicitly
+            renderer._buildBuffers(); // buffers depend on the atlas being present
 
             ls.textContent = 'Listo.';
             document.getElementById('load-overlay').style.display = 'none';
