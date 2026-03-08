@@ -141,6 +141,13 @@
             const hud = document.getElementById('hud');
             const mainCanvas = document.getElementById('main-canvas');
 
+            window.onerror = (msg, url, lineNo, columnNo, error) => {
+                ipcRenderer.send('log', `Error: ${msg} at ${url}:${lineNo}:${columnNo}`);
+            };
+            window.addEventListener('unhandledrejection', event => {
+                ipcRenderer.send('log', `Unhandled Promise Rejection: ${event.reason}`);
+            });
+
             // ── Size canvas to device pixels (Retina support) ──────────────────────
             const DPR = window.devicePixelRatio || 1;
             mainCanvas.width = Math.round(window.innerWidth * DPR);
