@@ -1,19 +1,19 @@
 # text-engine-poc
 
-Monorepo comparativo de motores de texto de alto rendimiento en macOS / Apple Silicon.
+Comparative monorepo of high-performance text rendering engines on macOS / Apple Silicon.
 
-## Objetivo
+## Goal
 
-Medir empíricamente el techo de rendimiento de diferentes stacks para renderizado de texto masivo (archivo de 100 MB, 120 Hz, frame budget 8.3 ms).
+Empirically measure the performance ceiling of different stacks for massive text rendering (100 MB file, 120 Hz, 8.3 ms frame budget).
 
-## Arquitectura
+## Architecture
 
-Ver [`docs/architecture.md`](docs/architecture.md) para el diseño completo.
+See [`docs/architecture.md`](docs/architecture.md) for the full design.
 
-## PoCs incluidos
+## Included PoCs
 
-| Carpeta | Stack | Categoría |
-|---------|-------|-----------|
+| Folder | Stack | Category |
+|--------|-------|----------|
 | `poc-1a-web-dom` | Electron + DOM | Web Sandboxed |
 | `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed |
 | `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed |
@@ -23,42 +23,42 @@ Ver [`docs/architecture.md`](docs/architecture.md) para el diseño completo.
 | `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems |
 | `poc-3b-rust-vello` | Rust + Vello | Systems |
 
-## Setup inicial
+## Initial Setup
 
-### 1. Generar el archivo de test (100 MB, determinista)
+### 1. Generate the test file (100 MB, deterministic)
 
 ```bash
 cd shared/test-data
 python3 generate_testfile.py
-# → genera test_100mb.txt (~100 MB, seed=42)
+# → generates test_100mb.txt (~100 MB, seed=42)
 ```
 
 ### 2. Build Rust workspace
 
 ```bash
-# Desde la raíz del monorepo
+# From the monorepo root
 cargo build --release -p poc-3a-rust-wgpu
 cargo build --release -p poc-3b-rust-vello
 ```
 
-### 3. PoCs Web (Node.js / Electron)
+### 3. Web PoCs (Node.js / Electron)
 
 ```bash
 # PoC 1A — Web DOM
 cd poc-1a-web-dom && npm install && npm start
 
-# Ejecutar benchmark de scroll sintético:
+# Run synthetic scroll benchmark:
 npm run benchmark
 ```
 
-## Requisitos de sistema
+## System Requirements
 
-- macOS 14+ (Sonoma) · Apple Silicon (M1 o superior)
-- Xcode 15+ (para PoCs 2A, 2B)
+- macOS 14+ (Sonoma) · Apple Silicon (M1 or higher)
+- Xcode 15+ (for PoCs 2A, 2B)
 - Rust 1.78+ (`rustup update`)
 - Node.js 20+ · npm 10+
 - Python 3.11+
 
-## Estructura de métricas
+## Metrics Structure
 
-Cada PoC exporta un archivo `results/<poc-id>_stats.json` con el schema definido en `shared/metrics/frame_stats.schema.json`.
+Each PoC exports a `results/<poc-id>_stats.json` file following the schema defined in `shared/metrics/frame_stats.schema.json`.
