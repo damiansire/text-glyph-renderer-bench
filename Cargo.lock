@@ -1549,6 +1549,7 @@ dependencies = [
 name = "poc-3b-rust-vello"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "memchr",
  "memmap2",
  "serde",

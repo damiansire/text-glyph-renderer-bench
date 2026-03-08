@@ -23,3 +23,6 @@ winit      = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 
+[[bench]]
+name = "buffer_bench"
+harness = false

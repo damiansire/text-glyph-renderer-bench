@@ -8,6 +8,10 @@ description = "PoC 3B — Rust + Vello (GPU Compute Shader vector renderer)"
 name = "poc3b"
 path = "src/main.rs"
 
+[lib]
+name = "poc_3b_rust_vello"
+path = "src/lib.rs"
+
 [dependencies]
 # Vello: GPU-first vector renderer (Compute Shaders, no texture atlas)
 vello = { git = "https://github.com/linebender/vello", branch = "main" }
@@ -24,4 +28,11 @@ serde_json = { workspace = true }
 # Font parsing (Vello uses kurbo for geometry; ttf-parser for font data)
 ttf-parser = { workspace = true }
 skrifa     = "0.19"   # Google's OpenType font reading library used by Vello internally
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "buffer_bench"
+harness = false
 
