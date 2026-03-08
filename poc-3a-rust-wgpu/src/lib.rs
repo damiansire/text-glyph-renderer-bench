@@ -6,7 +6,8 @@
 pub mod buffer;
 
 pub use buffer::{
+    BufferSnapshot,
     line_index::LineIndex,
-    piece_table::{BufferSnapshot, PieceTable},
+    piece_table::PieceTable,
     TextBuffer,
 };

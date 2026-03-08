@@ -8,10 +8,6 @@ description = "PoC 3A — Rust + wgpu (Metal backend) + HarfBuzz/rustybuzz text 
 name = "poc3a"
 path = "src/main.rs"
 
-[[bench]]
-name    = "synthetic_scroll"
-harness = false
-
 [dependencies]
 memmap2    = { workspace = true }
 memchr     = { workspace = true }
@@ -27,12 +23,3 @@ winit      = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 
-[profile.release]
-opt-level     = 3
-lto           = "thin"
-codegen-units = 1
-panic         = "abort"
-
-[profile.bench]
-opt-level = 3
-lto       = "thin"
