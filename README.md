@@ -1,4 +1,4 @@
-# text-engine-poc
+# Text Glyph Renderer Bench
 
 Comparative monorepo of high-performance text rendering engines on macOS / Apple Silicon.
 
