@@ -55,16 +55,6 @@ impl Piece {
 ///
 /// For single-piece tables (pure mmap read) this shares the `Arc<Mmap>` and
 /// stores a byte range — no allocation, no copy.
-#[derive(Clone)]
-pub struct BufferSnapshot {
-    data: Arc<Vec<u8>>,
-}
-
-impl AsRef<[u8]> for BufferSnapshot {
-    fn as_ref(&self) -> &[u8] {
-        &self.data
-    }
-}
 
 // ── PieceTable ──────────────────────────────────────────────────────────────
 
@@ -127,9 +117,10 @@ impl PieceTable {
         let len = data.len();
         // We store the in-memory data in the add buffer and make one Add piece.
         let mut pt = Self {
-            original: unsafe {
+            original: {
                 // Safety: empty anonymous mmap for the "original" slot.
-                MmapOptions::new().len(1).map_anon().expect("anon mmap")
+                let mut opts = MmapOptions::new();
+                opts.len(1).map_anon().expect("anon mmap").make_read_only().expect("make_read_only")
             },
             add_buffer: data,
             pieces: vec![Piece {
