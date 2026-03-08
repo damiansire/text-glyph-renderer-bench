@@ -113,7 +113,7 @@ final class ShapingEngine {
             CTRunGetPositions(ctRun, CFRangeMake(0, count), &positions)
 
             let attrs  = CTRunGetAttributes(ctRun) as! [NSAttributedString.Key: Any]
-            let font   = attrs[.font] as? CTFont ?? primaryFont
+            let font   = attrs[.font] as! CTFont
             let totalW = advances.reduce(0) { $0 + $1.width }
 
             return GlyphRun(glyphIDs: glyphs, advances: advances,

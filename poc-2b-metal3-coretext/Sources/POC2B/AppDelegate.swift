@@ -98,6 +98,7 @@ final class PoC2BViewController: NSViewController {
         renderer.atlas         = atlas
         renderer.lineHeight    = args.lineHeight
         renderer.scrollY       = 0
+        renderer.isHeadless    = args.benchmark
 
         renderer.onFrameRendered = { [weak self] stats in
             self?.recordFrame(stats)
@@ -116,9 +117,19 @@ final class PoC2BViewController: NSViewController {
 
     func startBenchmark() {
         print("Starting 2B benchmark: \(args.scrollFrames) frames")
+        fflush(stdout)
         frameTimes = []
         dropped = 0
         benchFrames = 0
+        
+        // Force manual draws for headless benchmark since MTKView might not tick
+        DispatchQueue.global(qos: .userInteractive).async {
+            while self.benchFrames < self.args.scrollFrames {
+                DispatchQueue.main.sync {
+                    self.mtkView.draw() // Force a draw
+                }
+            }
+        }
     }
 
     private func recordFrame(_ stats: MetalRenderer.FrameStatsItem) {
@@ -126,6 +137,10 @@ final class PoC2BViewController: NSViewController {
         frameTimes.append(stats.cpuEncodeNs)
         if stats.cpuEncodeNs > budgetNs { dropped += 1 }
         benchFrames += 1
+
+        if benchFrames % 100 == 0 {
+            print("Rendered \(benchFrames)/\(args.scrollFrames) frames")
+        }
 
         // Advance scroll
         renderer.scrollY += args.scrollPxPerFrame

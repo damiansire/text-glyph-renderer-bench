@@ -16,6 +16,9 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
+    private var fragmentFunction: MTLFunction!
+    
+    var isHeadless = false
 
     // ── Buffers ───────────────────────────────────────────────────────────
     /// Vertex buffer — triple-buffered to avoid CPU-GPU stalls.
@@ -67,9 +70,13 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         self.commandQueue = dev.makeCommandQueue()!
 
         // ── Pipeline state ─────────────────────────────────────────────
-        let library = dev.makeDefaultLibrary()!
+        let shaderURL = Bundle.module.url(forResource: "GlyphShader", withExtension: "metal")!
+        let shaderStr = try! String(contentsOf: shaderURL, encoding: .utf8)
+        let library   = try! dev.makeLibrary(source: shaderStr, options: nil)
+        
         let vertFn  = library.makeFunction(name: "glyph_vertex")!
         let fragFn  = library.makeFunction(name: "glyph_fragment")!
+        self.fragmentFunction = fragFn
 
         let desc = MTLRenderPipelineDescriptor()
         desc.label                              = "GlyphPipeline"
@@ -133,7 +140,7 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
 
     private func buildArgumentBuffer() {
         // Create an argument encoder for the fragment function's buffer(0) argument
-        argumentEncoder = pipelineState.makeFragmentArgumentEncoder(bufferIndex: 0)!
+        argumentEncoder = fragmentFunction.makeArgumentEncoder(bufferIndex: 0)
         let argBufLen = argumentEncoder.encodedLength
         argumentBuffer = device.makeBuffer(length: argBufLen, options: .storageModeShared)!
         argumentBuffer.label = "GlyphArgumentBuffer"
@@ -162,17 +169,18 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         guard
             let textBuffer = textBuffer,
             let shapingEngine = shapingEngine,
-            let atlas = atlas,
-            let commandBuffer = commandQueue.makeCommandBuffer(),
-            let renderPassDescriptor = view.currentRenderPassDescriptor,
-            let drawable = view.currentDrawable
+            let atlas = atlas
         else { return }
+
+        let commandBuffer = commandQueue.makeCommandBuffer()!
+        let renderPassDescriptor = isHeadless ? nil : view.currentRenderPassDescriptor
+        let drawable = isHeadless ? nil : view.currentDrawable
 
         // ── Viewport geometry ─────────────────────────────────────────────
         let W = Float(view.drawableSize.width)
         let H = Float(view.drawableSize.height)
         let firstLine = max(0, Int(scrollY / lineHeight))
-        let lastLine  = min(textBuffer.lineCount - 1, firstLine + Int(H / lineHeight) + 2)
+        let lastLine  = min(textBuffer.lineCount - 1, firstLine + Int(H / Float(lineHeight)) + 2)
 
         // ── Lazy shaping ──────────────────────────────────────────────────
         shapingEngine.shapeViewport(buffer: textBuffer, firstLine: firstLine, lastLine: lastLine)
@@ -231,28 +239,28 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
         uniPtr[0] = W; uniPtr[1] = H; uniPtr[2] = Float(ATLAS_SIZE); uniPtr[3] = 0
 
         // ── Encode render pass ────────────────────────────────────────────
-        renderPassDescriptor.colorAttachments[0].clearColor =
-            MTLClearColor(red: 0.102, green: 0.106, blue: 0.118, alpha: 1)
-
-        let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor)!
-        encoder.label = "GlyphRenderPass"
-        encoder.setRenderPipelineState(pipelineState)
-
-        encoder.setVertexBuffer(vbuf,           offset: 0, index: 0)
-        encoder.setVertexBuffer(uniformBuffer,  offset: 0, index: 1)
-
-        // ── BINDLESS: one argument buffer binding for all fragment resources ──
-        encoder.setFragmentBuffer(argumentBuffer, offset: 0, index: 0)
-        // Tell Metal which resources are resident (required for Tier 2)
-        encoder.useResource(atlasTexture, usage: .read, stages: .fragment)
-
-        if vertexCount > 0 {
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+        if let renderPassDescriptor = renderPassDescriptor, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) {
+            encoder.label = "GlyphRenderPass"
+            encoder.setRenderPipelineState(pipelineState)
+            
+            encoder.setVertexBuffer(vbuf,           offset: 0, index: 0)
+            encoder.setVertexBuffer(uniformBuffer,  offset: 0, index: 1)
+            
+            // ── BINDLESS: one argument buffer binding for all fragment resources ──
+            encoder.setFragmentBuffer(argumentBuffer, offset: 0, index: 0)
+            // Tell Metal which resources are resident (required for Tier 2)
+            encoder.useResource(atlasTexture, usage: .read, stages: .fragment)
+            
+            if vertexCount > 0 {
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+            }
+            encoder.endEncoding()
         }
-        encoder.endEncoding()
 
         commandBuffer.addCompletedHandler { [weak self] _ in self?.sema.signal() }
-        commandBuffer.present(drawable)
+        if let drawable = drawable {
+            commandBuffer.present(drawable)
+        }
         commandBuffer.commit()
 
         os_signpost(.end, log: signpostLog, name: "MetalFrame")

@@ -40,8 +40,8 @@ final class PieceTable: TextBuffer {
 
         let size = try FileManager.default.attributesOfItem(atPath: path)[.size] as! Int
 
-        // mmap the file read-only with MAP_POPULATE (pre-fault pages)
-        let ptr = mmap(nil, size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fileHandle.fileDescriptor, 0)
+        // mmap the file read-only 
+        let ptr = mmap(nil, size, PROT_READ, MAP_PRIVATE, fileHandle.fileDescriptor, 0)
         guard ptr != MAP_FAILED else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
 
         // Advise sequential access for the initial line-index scan
@@ -79,7 +79,7 @@ final class PieceTable: TextBuffer {
 
     func bytesInRange(_ range: Range<Int>) -> Data {
         var result = Data(capacity: range.count)
-        slicePieces(range) { slice, _ in result.append(slice); return true }
+        slicePieces(range) { slice, _ in result.append(contentsOf: slice); return true }
         return result
     }
 
@@ -145,7 +145,7 @@ final class PieceTable: TextBuffer {
             // Multi-piece: materialise and scan
             let data = bytesInRange(0..<byteLen)
             data.withUnsafeBytes { ptr in
-                for i in 0..<data.count where ptr[i] == 0x0A {
+                for i in 0..<data.count where ptr.load(fromByteOffset: i, as: UInt8.self) == 0x0A {
                     offsets.append(i + 1)
                 }
             }

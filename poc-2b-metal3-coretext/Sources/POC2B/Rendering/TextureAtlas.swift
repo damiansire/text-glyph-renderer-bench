@@ -25,9 +25,8 @@ final class TextureAtlasSwift {
     private var shelves: [(nextX: Int, y: Int, height: Int)] = []
     private var nextShelfY = 0
 
-    // Key: (glyphID, fontID) → AtlasSlot + LRU node
+    // Key: (glyphID, fontID) → AtlasSlot
     private var cache:   [UInt64: GlyphAtlasSlot] = [:]
-    private var lruList: [UInt64] = []   // tail=LRU head=MRU (simplified array LRU)
 
     private(set) var hitCount:  Int = 0
     private(set) var missCount: Int = 0
@@ -52,7 +51,6 @@ final class TextureAtlasSwift {
         let key = makeKey(glyph: glyph, font: font)
         if let s = cache[key] {
             hitCount += 1
-            touchLRU(key)
             return s
         }
         missCount += 1
@@ -109,13 +107,13 @@ final class TextureAtlasSwift {
             advance: adv.width
         )
         cache[key] = atlasSlot
-        lruList.append(key)
         return atlasSlot
     }
 
     // ── Shelf packing ─────────────────────────────────────────────────────
 
     private func allocate(w: Int, h: Int) -> (atlasX: Int, atlasY: Int)? {
+        guard w <= size && h <= size else { return nil }
         for i in 0..<shelves.indices.count {
             var shelf = shelves[i]
             if shelf.height >= h && shelf.nextX + w <= size {
@@ -127,20 +125,13 @@ final class TextureAtlasSwift {
         }
         if nextShelfY + h > size {
             // Full: clear and rebuild (simplified; production would use free-list)
-            shelves = []; nextShelfY = 0; cache = [:]; lruList = []
+            shelves = []; nextShelfY = 0; cache = [:]
             return allocate(w: w, h: h)
         }
         let y = nextShelfY
         shelves.append((nextX: w, y: y, height: h))
         nextShelfY += h
         return (0, y)
-    }
-
-    // ── LRU ───────────────────────────────────────────────────────────────
-
-    private func touchLRU(_ key: UInt64) {
-        lruList.removeAll(where: { $0 == key })
-        lruList.append(key)
     }
 
     // ── Key ───────────────────────────────────────────────────────────────

@@ -48,21 +48,21 @@ POCS = {
     "1b": {
         "label": "PoC 1B — Canvas 2D",
         "cwd":   ROOT_DIR / "poc-1b-canvas2d",
-        "cmd":   ["electron", ".", "--benchmark", f"--file={TEST_FILE}"],
+        "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1b-canvas2d_stats.json",
         "category": "Web",
     },
     "1c": {
         "label": "PoC 1C — WebGPU Atlas",
         "cwd":   ROOT_DIR / "poc-1c-webgpu-atlas",
-        "cmd":   ["electron", ".", "--benchmark", f"--file={TEST_FILE}"],
+        "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1c-webgpu-atlas_stats.json",
         "category": "Web",
     },
     "1d": {
         "label": "PoC 1D — WebGPU MSDF",
         "cwd":   ROOT_DIR / "poc-1d-webgpu-msdf",
-        "cmd":   ["electron", ".", "--benchmark", f"--file={TEST_FILE}"],
+        "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1d-webgpu-msdf_stats.json",
         "category": "Web",
     },
@@ -70,7 +70,7 @@ POCS = {
         "label": "PoC 2A — TextKit 2 (Swift)",
         "cwd":   ROOT_DIR / "poc-2a-textkit2",
         "cmd":   ["swift", "run", "-c", "release", "POC2A",
-                  "--benchmark", f"--file={TEST_FILE}"],
+                  "--benchmark", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "2a-textkit2_stats.json",
         "category": "Native macOS",
     },
@@ -78,7 +78,7 @@ POCS = {
         "label": "PoC 2B — Metal 3 + CoreText",
         "cwd":   ROOT_DIR / "poc-2b-metal3-coretext",
         "cmd":   ["swift", "run", "-c", "release", "POC2B",
-                  "--benchmark", f"--file={TEST_FILE}"],
+                  "--benchmark", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "2b-metal3-coretext_stats.json",
         "category": "Native macOS",
     },
@@ -86,7 +86,7 @@ POCS = {
         "label": "PoC 3A — Rust + wgpu + HarfBuzz",
         "cwd":   ROOT_DIR,
         "cmd":   ["cargo", "run", "--release", "-p", "poc-3a-rust-wgpu", "--",
-                  "--bench", f"--file={TEST_FILE}"],
+                  "--bench", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "3a-rust-wgpu_stats.json",
         "category": "Systems (Rust)",
     },
@@ -94,7 +94,7 @@ POCS = {
         "label": "PoC 3B — Rust + Vello",
         "cwd":   ROOT_DIR,
         "cmd":   ["cargo", "run", "--release", "-p", "poc-3b-rust-vello", "--",
-                  "--bench", "--headless", f"--file={TEST_FILE}"],
+                  "--bench", "--headless", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "3b-rust-vello_stats.json",
         "category": "Systems (Rust)",
     },
@@ -108,9 +108,14 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
     print(f"{'='*60}")
     t0 = time.monotonic()
     try:
+        # Avoid Electron environment contamination
+        env = os.environ.copy()
+        env.pop("ELECTRON_RUN_AS_NODE", None)
+
         result = subprocess.run(
             info["cmd"],
             cwd=str(info["cwd"]),
+            env=env,
             timeout=300,  # 5 minutes max per PoC
             check=True,
             capture_output=False,
@@ -198,14 +203,15 @@ if __name__ == "__main__":
 
     # Override test file in all commands if specified
     if args.file != str(TEST_FILE):
+        abs_file = str(Path(args.file).resolve())
         for k in POCS:
             POCS[k]["cmd"] = [
-                c.replace(str(TEST_FILE), args.file) if str(TEST_FILE) in c else c
+                c.replace(str(TEST_FILE), abs_file) if str(TEST_FILE) in c else c
                 for c in POCS[k]["cmd"]
             ]
-
+            
     # Check test file exists
-    test_file = Path(args.file)
+    test_file = Path(args.file).resolve()
     if not test_file.exists():
         print(f"ERROR: test file not found: {test_file}")
         print("Generate it with:")
