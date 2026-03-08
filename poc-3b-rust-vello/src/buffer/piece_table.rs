@@ -295,7 +295,7 @@ impl TextBuffer for PieceTable {
             self.pieces.splice(piece_idx..=piece_idx, [left, new_piece, right]);
         }
 
-        self.dirty = true;
+        self.rebuild_line_index();
     }
 
     fn delete(&mut self, range: Range<usize>) {
@@ -330,7 +330,7 @@ impl TextBuffer for PieceTable {
         }
 
         self.pieces.splice(start_piece..=end_piece, replacement);
-        self.dirty = true;
+        self.rebuild_line_index();
     }
 
     fn snapshot(&self) -> super::BufferSnapshot {
