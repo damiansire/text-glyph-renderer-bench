@@ -24,6 +24,19 @@
 //! Line index is maintained by `LineIndex` (see `line_index.rs`): `from_*`
 //! builds it once on load and `insert`/`delete` patch it incrementally, so no
 //! edit triggers a full rescan of the document.
+//!
+//! # Safety invariant (mmap)
+//!
+//! `from_file` maps the backing file with `unsafe` (`MmapOptions::map`). The
+//! soundness of every later read through the `Mmap` depends on an invariant the
+//! kernel does NOT enforce: **the backing file must not be truncated or
+//! modified by another process while the map is alive.** `Mmap` gives no
+//! `O_EXLOCK`/snapshot guarantee, so if the file shrinks underneath us, touching
+//! a now-invalid page faults with `SIGBUS` (UB / process abort) rather than a
+//! recoverable error. The caller must guarantee exclusivity for the lifetime of
+//! the `PieceTable` (e.g. open files the benchmark owns). For a non-benchmark,
+//! editor-grade path this is the standard mmap caveat and would warrant an
+//! advisory lock or a copy-on-load fallback.
 
 use super::TextBuffer;
 use crate::line_index::LineIndex;
@@ -97,6 +110,9 @@ impl PieceTable {
     /// for the Linux benchmark host; it costs nothing elsewhere.
     pub fn from_file(path: &Path) -> io::Result<Self> {
         let file = File::open(path)?;
+        // SAFETY: see the "Safety invariant (mmap)" section in the module docs —
+        // the caller must ensure the file is not truncated/modified externally
+        // while this map is alive (otherwise reads can SIGBUS / are UB).
         let mmap = unsafe {
             MmapOptions::new()
                 .populate() // pre-fault pages on Linux; no-op on macOS (see above).

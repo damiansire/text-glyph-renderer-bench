@@ -29,6 +29,17 @@ pub(crate) struct VelloFont {
 impl VelloFont {
     pub(crate) fn load(path: &std::path::Path, size_px: f32) -> std::io::Result<Self> {
         let data = std::fs::read(path)?;
+        // Validate the font *contents* once here (not just that the path
+        // exists): a corrupt/malformed font is a recoverable input error, so we
+        // surface it as `io::Error` instead of panicking later, per glyph, in
+        // the `build_scene` hot loop. `FontRef` borrows `data`, so it is dropped
+        // before we move `data` into the struct.
+        if FontRef::new(&data).is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid or unsupported font file: {}", path.display()),
+            ));
+        }
         Ok(Self { data: Arc::new(data), font_size: size_px })
     }
 }
@@ -79,7 +90,9 @@ impl TextSceneBuilder {
         }
 
         let _font_size = Size::new(self.font.font_size);
-        let font_ref  = FontRef::new(&self.font.data).expect("valid font");
+        // Invariant: `VelloFont::load` already validated these bytes parse as a
+        // font (and the data is immutable behind `Arc`), so this cannot fail.
+        let font_ref  = FontRef::new(&self.font.data).expect("font validated at load");
         let charmap   = font_ref.charmap();
 
         let _text_color = Color::from_rgb8(0xC9, 0xD1, 0xD9);
