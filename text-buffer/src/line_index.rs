@@ -140,7 +140,9 @@ impl LineIndex {
     /// are visible given the scroll offset and viewport height in bytes.
     pub fn lines_for_byte_range(&self, byte_start: usize, byte_end: usize) -> (usize, usize) {
         let first = self.byte_to_line(byte_start);
-        let last = self.byte_to_line(byte_end.saturating_sub(1)).min(self.offsets.len() - 1);
+        let last = self
+            .byte_to_line(byte_end.saturating_sub(1))
+            .min(self.offsets.len() - 1);
         (first, last)
     }
 
@@ -329,27 +331,27 @@ mod tests {
 
     #[test]
     fn record_insert_matches_rebuild() {
-        check_insert("world", 0, "hello ");   // before line 0, no newline
-        check_insert("hello", 5, "\nworld");  // append newline + text
-        check_insert("ab\ncd", 0, "X");       // insert at 0, shifts later starts
-        check_insert("ab\ncd", 3, "X");       // exactly at a line start (stays put)
-        check_insert("ab\ncd", 2, "X\nY");    // newline inside inserted text
-        check_insert("a\nb\nc", 2, "XY");     // multi-line, mid, no newline
-        check_insert("abcd", 2, "X\nY\nZ");   // several newlines inserted
-        check_insert("", 0, "fresh\nstart");  // into an empty buffer
-        check_insert("a\nb\nc\nd", 4, "\n");  // lone newline at a boundary
+        check_insert("world", 0, "hello "); // before line 0, no newline
+        check_insert("hello", 5, "\nworld"); // append newline + text
+        check_insert("ab\ncd", 0, "X"); // insert at 0, shifts later starts
+        check_insert("ab\ncd", 3, "X"); // exactly at a line start (stays put)
+        check_insert("ab\ncd", 2, "X\nY"); // newline inside inserted text
+        check_insert("a\nb\nc", 2, "XY"); // multi-line, mid, no newline
+        check_insert("abcd", 2, "X\nY\nZ"); // several newlines inserted
+        check_insert("", 0, "fresh\nstart"); // into an empty buffer
+        check_insert("a\nb\nc\nd", 4, "\n"); // lone newline at a boundary
     }
 
     #[test]
     fn record_delete_matches_rebuild() {
-        check_delete("a\nb\nc", 2, 4);        // drop "b\n" (one newline)
-        check_delete("a\nb\nc\nd", 2, 4);     // drop one newline, shift the rest
-        check_delete("abcd\nefgh", 2, 7);     // delete spanning a newline
-        check_delete("a\nbcd\ne", 3, 4);      // delete within a line
-        check_delete("ab\ncd", 2, 3);         // delete just the newline
-        check_delete("hello world", 0, 11);   // delete everything
-        check_delete("a\nb\nc\n", 5, 6);      // delete the trailing newline
-        check_delete("a\nb\nc", 0, 2);        // delete first line incl. newline
+        check_delete("a\nb\nc", 2, 4); // drop "b\n" (one newline)
+        check_delete("a\nb\nc\nd", 2, 4); // drop one newline, shift the rest
+        check_delete("abcd\nefgh", 2, 7); // delete spanning a newline
+        check_delete("a\nbcd\ne", 3, 4); // delete within a line
+        check_delete("ab\ncd", 2, 3); // delete just the newline
+        check_delete("hello world", 0, 11); // delete everything
+        check_delete("a\nb\nc\n", 5, 6); // delete the trailing newline
+        check_delete("a\nb\nc", 0, 2); // delete first line incl. newline
     }
 
     #[test]

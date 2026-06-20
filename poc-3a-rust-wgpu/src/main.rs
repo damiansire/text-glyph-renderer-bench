@@ -167,8 +167,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !args.bench {
         // Just print stats and exit
         println!("\nLine 0   start byte: {}", pt.line_start_byte(0));
-        println!("Line 100 start byte: {}", pt.line_start_byte(100.min(pt.line_count() - 1)));
-        println!("Byte 4096 → line {}", pt.byte_to_line(4096.min(pt.byte_len() - 1)));
+        println!(
+            "Line 100 start byte: {}",
+            pt.line_start_byte(100.min(pt.line_count() - 1))
+        );
+        println!(
+            "Byte 4096 → line {}",
+            pt.byte_to_line(4096.min(pt.byte_len() - 1))
+        );
         println!("\nDone. Run with --bench for scroll benchmark.");
         return Ok(());
     }

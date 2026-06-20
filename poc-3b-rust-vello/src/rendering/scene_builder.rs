@@ -15,9 +15,9 @@
 use skrifa::prelude::Size;
 use skrifa::raw::FontRef;
 use skrifa::MetadataProvider;
+use std::sync::Arc;
 use vello::peniko::Color;
 use vello::Scene;
-use std::sync::Arc;
 
 // ── FontData wrapper ──────────────────────────────────────────────────────────
 
@@ -40,7 +40,10 @@ impl VelloFont {
                 format!("invalid or unsupported font file: {}", path.display()),
             ));
         }
-        Ok(Self { data: Arc::new(data), font_size: size_px })
+        Ok(Self {
+            data: Arc::new(data),
+            font_size: size_px,
+        })
     }
 }
 
@@ -92,8 +95,8 @@ impl TextSceneBuilder {
         let _font_size = Size::new(self.font.font_size);
         // Invariant: `VelloFont::load` already validated these bytes parse as a
         // font (and the data is immutable behind `Arc`), so this cannot fail.
-        let font_ref  = FontRef::new(&self.font.data).expect("font validated at load");
-        let charmap   = font_ref.charmap();
+        let font_ref = FontRef::new(&self.font.data).expect("font validated at load");
+        let charmap = font_ref.charmap();
 
         let _text_color = Color::from_rgb8(0xC9, 0xD1, 0xD9);
 

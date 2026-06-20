@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: fmt + clippy + test (text-buffer) + check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (workspace)
+        run: cargo clippy --workspace --all-targets
+
+      # Only `text-buffer` is tested in CI: the `poc-3b-rust-vello` binary
+      # crashes with 0xC0000005 (a pre-existing, known defect unrelated to the
+      # shared buffer), so a `--workspace` test run is intentionally NOT used.
+      # See plan_final_executar.md / CLAUDE.md.
+      - name: Test (text-buffer)
+        run: cargo test -p text-buffer
+
+      # `cargo check` validates that every crate (including the PoCs) compiles,
+      # without running the crashy 3B binary.
+      - name: Check (workspace)
+        run: cargo check --workspace
