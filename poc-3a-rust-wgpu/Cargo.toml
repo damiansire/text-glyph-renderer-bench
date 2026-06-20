@@ -23,5 +23,9 @@ criterion = { workspace = true }
 name = "buffer_bench"
 harness = false
 
+[[bench]]
+name = "range_alloc_bench"
+harness = false
+
 [lints]
 workspace = true
