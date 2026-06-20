@@ -156,7 +156,11 @@ impl PieceTable {
             original: {
                 // empty anonymous mmap for the "original" slot.
                 let mut opts = MmapOptions::new();
-                opts.len(1).map_anon().expect("anon mmap").make_read_only().expect("make_read_only")
+                opts.len(1)
+                    .map_anon()
+                    .expect("anon mmap")
+                    .make_read_only()
+                    .expect("make_read_only")
             },
             add_buffer: data,
             pieces: vec![Piece {
@@ -241,11 +245,16 @@ impl TextBuffer for PieceTable {
 
     fn bytes_in_range(&self, range: Range<usize>) -> Vec<u8> {
         let mut out = Vec::with_capacity(range.len());
+        self.bytes_in_range_into(range, &mut out);
+        out
+    }
+
+    fn bytes_in_range_into(&self, range: Range<usize>, out: &mut Vec<u8>) {
+        out.reserve(range.len());
         self.slice_pieces(range, |slice, _| {
             out.extend_from_slice(slice);
             true
         });
-        out
     }
 
     fn slice_pieces<F>(&self, range: Range<usize>, mut f: F)
@@ -318,7 +327,8 @@ impl TextBuffer for PieceTable {
                 start: original_piece.start + local_offset,
                 len: original_piece.len - local_offset,
             };
-            self.pieces.splice(piece_idx..=piece_idx, [left, new_piece, right]);
+            self.pieces
+                .splice(piece_idx..=piece_idx, [left, new_piece, right]);
         }
 
         // Patch the line index in place instead of rescanning the whole document.
@@ -412,7 +422,7 @@ mod tests {
     fn test_byte_to_line() {
         let pt = make("aaa\nbbb\nccc");
         assert_eq!(pt.byte_to_line(0), 0);
-        assert_eq!(pt.byte_to_line(3), 0);  // the \n is still on line 0
+        assert_eq!(pt.byte_to_line(3), 0); // the \n is still on line 0
         assert_eq!(pt.byte_to_line(4), 1);
         assert_eq!(pt.byte_to_line(8), 2);
     }
@@ -476,6 +486,82 @@ mod tests {
         assert_eq!(content, "ABCDE");
         // Partial slice across the inserted pieces.
         assert_eq!(pt.bytes_in_range(1..4), b"BCD");
+    }
+
+    /// F4 — `find_piece` boundary offset: when `byte_offset` lands exactly on
+    /// the seam between two pieces, the lookup must resolve to the END of the
+    /// left piece (`local_offset == piece.len`), not the start of the right
+    /// one. This is the branch `insert` relies on to append after a piece
+    /// without splitting it. We assert it indirectly through the public API:
+    /// an insert exactly at a piece boundary must land between the two pieces
+    /// (no split, content preserved), and a slice ending on the seam must be
+    /// exact.
+    #[test]
+    fn test_find_piece_boundary_offset() {
+        // Build a 2-piece table: "AB" + "CD" → pieces [0..2), [2..4).
+        let mut pt = make("ABEF");
+        pt.delete(2..4); // "AB", single piece
+        pt.insert(2, "CD"); // append "CD" after "AB" → 2 pieces, seam at byte 2.
+
+        // Sanity: content reassembles across the seam.
+        let content = String::from_utf8(pt.bytes_in_range(0..pt.byte_len())).unwrap();
+        assert_eq!(content, "ABCD");
+
+        // Internal: the boundary offset (== first piece len) resolves to the
+        // end of the first piece, not the start of the second.
+        assert_eq!(pt.pieces.len(), 2);
+        let first_len = pt.pieces[0].len;
+        let (idx, local) = pt.find_piece(first_len);
+        assert_eq!(
+            (idx, local),
+            (0, first_len),
+            "offset on the seam must point at the END of the left piece"
+        );
+
+        // Offset just past the seam steps into the second piece.
+        let (idx2, local2) = pt.find_piece(first_len + 1);
+        assert_eq!((idx2, local2), (1, 1));
+
+        // Inserting exactly on the seam must not corrupt or split incorrectly.
+        pt.insert(first_len, "X"); // "AB" + "X" + "CD"
+        let content2 = String::from_utf8(pt.bytes_in_range(0..pt.byte_len())).unwrap();
+        assert_eq!(content2, "ABXCD");
+
+        // Slice ending exactly on the (new) first seam is byte-exact.
+        assert_eq!(pt.bytes_in_range(0..2), b"AB");
+    }
+
+    /// F5 — `bytes_in_range_into` appends into a caller-owned buffer (zero-alloc
+    /// ergonomics API). It must produce the same bytes as `bytes_in_range`,
+    /// append (not clear) by default, and be reusable across calls and across
+    /// piece boundaries.
+    #[test]
+    fn test_bytes_in_range_into() {
+        let mut pt = make("ACE");
+        pt.insert(1, "B"); // A B CE
+        pt.insert(3, "D"); // A B C D E (multi-piece)
+
+        // Matches the allocating variant across a multi-piece span.
+        let owned = pt.bytes_in_range(1..4);
+        let mut reused = Vec::new();
+        pt.bytes_in_range_into(1..4, &mut reused);
+        assert_eq!(reused, owned);
+        assert_eq!(reused, b"BCD");
+
+        // Appends by default (does not clear the caller's buffer).
+        pt.bytes_in_range_into(4..5, &mut reused);
+        assert_eq!(reused, b"BCDE");
+
+        // Reusable after an explicit clear, allocating nothing new in steady
+        // state once capacity is warm.
+        reused.clear();
+        pt.bytes_in_range_into(0..pt.byte_len(), &mut reused);
+        assert_eq!(reused, b"ABCDE");
+
+        // Empty range appends nothing.
+        let before = reused.len();
+        pt.bytes_in_range_into(2..2, &mut reused);
+        assert_eq!(reused.len(), before);
     }
 
     /// Invalid UTF-8 bytes must round-trip through the byte API untouched

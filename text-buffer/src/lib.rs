@@ -58,6 +58,29 @@ pub trait TextBuffer: Send + Sync {
     /// process data piece by piece.
     fn bytes_in_range(&self, range: Range<usize>) -> Vec<u8>;
 
+    /// Like [`bytes_in_range`], but appends the bytes into a caller-owned
+    /// `Vec<u8>` instead of allocating a fresh one per call.
+    ///
+    /// This is an **ergonomics** helper, not a performance fix: the Fase 2
+    /// measurement found the per-call allocation of `bytes_in_range`
+    /// (~34 ns over a 8.3 ms frame budget — 0.0004 %) to be negligible. It
+    /// exists for callers that already need a contiguous buffer across many
+    /// calls (e.g. a per-frame scratch buffer) and want to amortise the
+    /// allocation by reusing it. The buffer is **not** cleared first, so the
+    /// caller controls whether to append or `clear()` beforehand.
+    ///
+    /// Default impl is provided in terms of `slice_pieces`; backends may
+    /// override for a tighter loop.
+    ///
+    /// [`bytes_in_range`]: TextBuffer::bytes_in_range
+    fn bytes_in_range_into(&self, range: Range<usize>, out: &mut Vec<u8>) {
+        out.reserve(range.len());
+        self.slice_pieces(range, |slice, _| {
+            out.extend_from_slice(slice);
+            true
+        });
+    }
+
     /// Iterate over (data_slice, piece_offset) tuples that together cover
     /// the given byte range, without copying.  The closure returns `false`
     /// to stop early.

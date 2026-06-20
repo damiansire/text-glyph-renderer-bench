@@ -22,13 +22,13 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 struct Args {
-    file:            PathBuf,
-    font:            PathBuf,
-    bench:           bool,
-    scroll_frames:   u32,
-    scroll_px:       f64,
-    line_height:     f64,
-    headless:        bool,
+    file: PathBuf,
+    font: PathBuf,
+    bench: bool,
+    scroll_frames: u32,
+    scroll_px: f64,
+    line_height: f64,
+    headless: bool,
 }
 
 impl Args {
@@ -45,13 +45,13 @@ impl Args {
         let mut argv = std::env::args().skip(1);
         while let Some(a) = argv.next() {
             match a.as_str() {
-                "--file"        => args.file   = argv.next().unwrap().into(),
-                "--font"        => args.font   = argv.next().unwrap().into(),
-                "--bench"       => args.bench  = true,
-                "--headless"    => args.headless = true,
-                "--frames"      => args.scroll_frames = argv.next().unwrap().parse().unwrap(),
-                "--scroll-px"   => args.scroll_px     = argv.next().unwrap().parse().unwrap(),
-                "--line-height" => args.line_height   = argv.next().unwrap().parse().unwrap(),
+                "--file" => args.file = argv.next().unwrap().into(),
+                "--font" => args.font = argv.next().unwrap().into(),
+                "--bench" => args.bench = true,
+                "--headless" => args.headless = true,
+                "--frames" => args.scroll_frames = argv.next().unwrap().parse().unwrap(),
+                "--scroll-px" => args.scroll_px = argv.next().unwrap().parse().unwrap(),
+                "--line-height" => args.line_height = argv.next().unwrap().parse().unwrap(),
                 _ => {}
             }
         }
@@ -72,7 +72,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Load text file ─────────────────────────────────────────────────────
     let t_load = Instant::now();
     let pt = PieceTable::from_file(&args.file)?;
-    println!("Loaded {} MB, {} lines in {:.1}ms",
+    println!(
+        "Loaded {} MB, {} lines in {:.1}ms",
         pt.byte_len() / 1_048_576,
         pt.line_count(),
         t_load.elapsed().as_secs_f64() * 1000.0
@@ -107,32 +108,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "  (measures CPU scene build only — NO geometry/raster/GPU,\n   so no frame-budget drop rate is reported)"
     );
 
-    // Pre-split lines (Vec of byte slices into the mmap)
-    let all_bytes: Vec<u8> = pt.bytes_in_range(0..pt.byte_len());
-    let lines: Vec<&[u8]> = all_bytes.split(|&b| b == b'\n').collect();
-    let line_count = lines.len();
-
+    // F6 (memory): do NOT materialise the whole ~100 MB file into a contiguous
+    // `Vec<u8>` up front (the old `bytes_in_range(0..byte_len())` doubled the
+    // resident set: mmap pages + a full heap copy, locally negating the crate's
+    // zero-copy premise). Instead we mirror PoC 3A: only the *visible* line
+    // window is resolved per frame, straight off the piece table via
+    // `line_start_byte` + `slice_pieces` (zero-copy borrows into the mmap),
+    // copied into a small reusable per-line buffer bounded by the viewport
+    // (~tens of lines), never the whole document.
     const VIEWPORT_H: f64 = 900.0;
+    // A couple of extra lines of margin so partially visible rows still count.
+    let visible_lines = (VIEWPORT_H / args.line_height) as usize + 2;
+
+    let line_count = pt.line_count();
     let mut iter_times_us: Vec<u64> = Vec::with_capacity(args.scroll_frames as usize);
     let mut scroll_y = 0.0_f64;
     let total_h = line_count as f64 * args.line_height;
+
+    // Reusable buffers: the line byte-store and the `&[u8]` view slice are
+    // allocated once and cleared per frame, so the steady state allocates
+    // nothing proportional to the file size.
+    let mut window_bytes: Vec<u8> = Vec::new();
+    let mut window_spans: Vec<(usize, usize)> = Vec::with_capacity(visible_lines);
 
     for _iter in 0..args.scroll_frames {
         let t0 = Instant::now();
 
         let first_line = (scroll_y / args.line_height) as usize;
+        let last_line = (first_line + visible_lines).min(line_count.saturating_sub(1));
+
+        // Resolve only the visible window off the piece table (zero-copy reads
+        // into the mmap), appending each line into the reusable buffer and
+        // recording its (start, end) span. The total copied per frame is the
+        // size of the viewport, not of the file.
+        window_bytes.clear();
+        window_spans.clear();
+        for line_idx in first_line..=last_line {
+            let line_start = pt.line_start_byte(line_idx);
+            let line_end = if line_idx + 1 < line_count {
+                pt.line_start_byte(line_idx + 1)
+            } else {
+                pt.byte_len()
+            };
+            let span_start = window_bytes.len();
+            pt.slice_pieces(line_start..line_end, |slice, _| {
+                window_bytes.extend_from_slice(slice);
+                true
+            });
+            window_spans.push((span_start, window_bytes.len()));
+        }
+        // Materialise the borrowed `&[u8]` views now that `window_bytes` is
+        // stable for this frame (the spans index into it).
+        let lines: Vec<&[u8]> = window_spans
+            .iter()
+            .map(|&(s, e)| &window_bytes[s..e])
+            .collect();
+
         // CPU-side scene build for the visible viewport (line traversal +
         // charmap lookups). Builds no geometry and submits nothing to the GPU.
-        let _scene = scene_builder.build_scene(
-            &lines,
-            first_line,
-            VIEWPORT_H,
-            args.line_height,
-            scroll_y,
-        );
+        // `first_line` is 0 because `lines` already starts at the first visible
+        // line (the window was sliced for this frame).
+        let _scene = scene_builder.build_scene(&lines, 0, VIEWPORT_H, args.line_height, scroll_y);
 
         scroll_y += args.scroll_px;
-        if scroll_y + VIEWPORT_H > total_h { scroll_y = 0.0; }
+        if scroll_y + VIEWPORT_H > total_h {
+            scroll_y = 0.0;
+        }
 
         let elapsed_us = t0.elapsed().as_micros() as u64;
         iter_times_us.push(elapsed_us);
