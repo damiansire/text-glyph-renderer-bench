@@ -21,6 +21,7 @@ path = "src/lib.rs"
 text-buffer = { path = "../text-buffer" }
 
 # Vello: GPU-first vector renderer (Compute Shaders, no texture atlas)
+# TODO(repro): pinear a un rev/tag concreto en vez de branch="main" para builds reproducibles
 vello = { git = "https://github.com/linebender/vello", branch = "main" }
 
 # Shared workspace deps
