@@ -426,4 +426,67 @@ mod tests {
         pt.insert(5, "\nworld");
         assert_eq!(pt.line_count(), 2);
     }
+
+    // ── Edge cases: empty buffer / multi-piece / invalid UTF-8 / mmap path ──
+
+    /// Deleting the entire content must not leave the table in a state that
+    /// panics on the next operation (regression for the `find_piece`
+    /// underflow when `pieces` is empty).
+    #[test]
+    fn test_delete_all_then_operate() {
+        let mut pt = make("hello world");
+        pt.delete(0..pt.byte_len());
+        assert_eq!(pt.byte_len(), 0);
+        // Subsequent operations must not panic.
+        assert_eq!(pt.bytes_in_range(0..0), Vec::<u8>::new());
+        pt.insert(0, "fresh");
+        let content = String::from_utf8(pt.bytes_in_range(0..pt.byte_len())).unwrap();
+        assert_eq!(content, "fresh");
+    }
+
+    /// A slice that spans several pieces after a sequence of edits must
+    /// reassemble the logical content correctly.
+    #[test]
+    fn test_slice_multi_piece() {
+        let mut pt = make("ACE");
+        pt.insert(1, "B"); // A B CE
+        pt.insert(3, "D"); // A B C D E
+        let content = String::from_utf8(pt.bytes_in_range(0..pt.byte_len())).unwrap();
+        assert_eq!(content, "ABCDE");
+        // Partial slice across the inserted pieces.
+        assert_eq!(pt.bytes_in_range(1..4), b"BCD");
+    }
+
+    /// Invalid UTF-8 bytes must round-trip through the byte API untouched
+    /// (the buffer is byte-oriented; it must not assume valid UTF-8).
+    #[test]
+    fn test_invalid_utf8_roundtrip() {
+        let raw = vec![0x66, 0xFF, 0x0A, 0xFE, 0x6F]; // f, invalid, \n, invalid, o
+        let pt = PieceTable::from_bytes(raw.clone());
+        assert_eq!(pt.bytes_in_range(0..pt.byte_len()), raw);
+        assert_eq!(pt.line_count(), 2);
+    }
+
+    /// Exercise the `from_file` / mmap (`Original`) path, which the rest of
+    /// the suite never touches because `from_bytes` only uses the add buffer.
+    #[test]
+    fn test_from_file_original_path() {
+        use std::io::Write;
+
+        let mut path = std::env::temp_dir();
+        path.push(format!("poc3a_pt_test_{}.txt", std::process::id()));
+        {
+            let mut f = std::fs::File::create(&path).expect("create tmp file");
+            f.write_all(b"alpha\nbeta\ngamma").expect("write tmp file");
+        }
+
+        let pt = PieceTable::from_file(&path).expect("mmap tmp file");
+        assert_eq!(pt.byte_len(), 16);
+        assert_eq!(pt.line_count(), 3);
+        assert_eq!(pt.line_start_byte(1), 6);
+        assert_eq!(pt.bytes_in_range(0..5), b"alpha");
+        assert_eq!(pt.bytes_in_range(6..10), b"beta");
+
+        let _ = std::fs::remove_file(&path);
+    }
 }
