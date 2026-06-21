@@ -25,6 +25,26 @@ pub struct LineIndex {
 }
 
 impl LineIndex {
+    /// Narrow a byte position into the `u32` used to store line offsets.
+    ///
+    /// The index addresses files up to 4 GB by design (see the struct docs), so
+    /// every position fits in `u32`. The invariant is asserted in debug builds
+    /// and the truncation in release is deliberate — this is the
+    /// `clippy::cast_possible_truncation` site the repo calls out as highest ROI,
+    /// now guarded at the source instead of left as a silent `as u32`.
+    #[inline]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "line offsets are capped at 4 GB by design; the debug_assert guards the invariant"
+    )]
+    fn narrow(byte_pos: usize) -> u32 {
+        debug_assert!(
+            byte_pos <= u32::MAX as usize,
+            "line offset {byte_pos} exceeds u32::MAX (file larger than 4 GB)"
+        );
+        byte_pos as u32
+    }
+
     // ── Construction ─────────────────────────────────────────────────────
 
     /// Build a `LineIndex` by SIMD-scanning `data` for `\n` bytes.
@@ -43,7 +63,7 @@ impl LineIndex {
         // `memchr_iter` uses NEON on aarch64, SSE2/AVX2 on x86_64.
         // Each found `\n` at position `i` means line `k+1` starts at `i+1`.
         for newline_pos in memchr_iter(b'\n', data) {
-            let next_line_start = (newline_pos + 1) as u32;
+            let next_line_start = Self::narrow(newline_pos + 1);
             offsets.push(next_line_start);
         }
 
@@ -91,7 +111,7 @@ impl LineIndex {
     /// For a 100 MB file with ~1.3 M lines: ~21 comparisons.
     #[inline]
     pub fn byte_to_line(&self, byte_offset: usize) -> usize {
-        let target = byte_offset as u32;
+        let target = Self::narrow(byte_offset);
         match self.offsets.binary_search(&target) {
             // Exact match: this byte IS the start of a line.
             Ok(line) => line,
