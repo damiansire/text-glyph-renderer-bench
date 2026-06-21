@@ -2,6 +2,7 @@
 name    = "poc-3a-rust-wgpu"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
 description = "PoC 3A — Rust + wgpu (Metal backend) + HarfBuzz/rustybuzz text shaping"
 
 [[bin]]
@@ -26,3 +27,6 @@ criterion = { workspace = true }
 [[bench]]
 name = "buffer_bench"
 harness = false
+
+[lints]
+workspace = true

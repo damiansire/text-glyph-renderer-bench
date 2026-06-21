@@ -2,6 +2,7 @@
 name    = "poc-3b-rust-vello"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
 description = "PoC 3B — Rust + Vello (GPU Compute Shader vector renderer)"
 
 [[bin]]
@@ -35,4 +36,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "buffer_bench"
 harness = false
+
+[lints]
+workspace = true
 

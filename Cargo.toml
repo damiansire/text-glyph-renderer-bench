@@ -5,6 +5,30 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+# MSRV: fuente unica de verdad. Mantener en sync con el README.
+rust-version = "1.78"
+
+# Set de lints del workspace. Heredado por cada crate con `[lints] workspace = true`.
+# Todo en "warn" a proposito: el repo usa `unsafe` (memmap) y `unwrap` en hot paths
+# de PoC, asi que estos lints documentan deuda sin romper el build. Subir a "deny"
+# cuando se limpie cada categoria.
+[workspace.lints.rust]
+unsafe_code = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# El de mayor ROI en un render path: castear f32 de subpixel a i32 de pixel
+# esconde off-by-one silenciosos.
+cast_possible_truncation = "warn"
+semicolon_if_nothing_returned = "warn"
+use_self = "warn"
+dbg_macro = "warn"
+todo = "warn"
+wildcard_dependencies = "warn"
+allow_attributes_without_reason = "warn"
+
 [workspace.dependencies]
 # Data / IO
 memmap2    = "0.9"
