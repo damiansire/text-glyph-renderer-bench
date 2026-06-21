@@ -14,7 +14,7 @@
 //! doing so would over-sell a microbenchmark as an end-to-end render budget.
 //! Re-introduce the frame-budget verdict only once real shaping + raster land.
 
-use poc_3a_rust_wgpu::{LineIndex, PieceTable, TextBuffer};
+use poc_3a_rust_wgpu::{PieceTable, TextBuffer};
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -75,6 +75,10 @@ struct TraversalStats {
 /// piece-table slices for those lines. It measures ONLY line-index lookups +
 /// pointer arithmetic — there is no shaping, no rasterization, no GPU work.
 /// Consequently it does NOT compute a frame-budget drop rate (see module docs).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "bench scaffolding: scroll->line index is a deliberate floor and elapsed micros fit in u64"
+)]
 fn run_traversal_microbench(pt: &mut PieceTable, args: &Args) -> TraversalStats {
     const VIEWPORT_LINES: usize = 50;
     const MARGIN_LINES: usize = 50;
@@ -197,9 +201,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let out_path = format!("results/3a-rust-wgpu_stats.json");
+    let out_path = "results/3a-rust-wgpu_stats.json";
     std::fs::create_dir_all("results")?;
-    std::fs::write(&out_path, serde_json::to_string_pretty(&result)?)?;
+    std::fs::write(out_path, serde_json::to_string_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     println!("\nResults written to {}", out_path);
 
