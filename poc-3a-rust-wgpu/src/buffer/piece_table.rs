@@ -53,8 +53,10 @@ impl Piece {
 /// An immutable, Arc-wrapped materialization of the current logical content.
 /// Created by `PieceTable::snapshot()`, cheap to clone (O(1) Arc bump).
 ///
-/// For single-piece tables (pure mmap read) this shares the `Arc<Mmap>` and
-/// stores a byte range — no allocation, no copy.
+/// Creation cost: O(N). `snapshot()` always copies the logical content into a
+/// fresh `Vec<u8>` (see its impl). The single-piece fast-path that would share
+/// the mmap without copying is **not implemented**: `original` is a plain
+/// `Mmap` (not `Arc<Mmap>`), so the snapshot cannot reference the mapped pages.
 
 // ── PieceTable ──────────────────────────────────────────────────────────────
 

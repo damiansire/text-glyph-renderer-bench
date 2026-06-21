@@ -6,8 +6,12 @@ pub mod piece_table;
 use std::ops::Range;
 
 /// Snapshot ref-counted immutable view into the buffer.
-/// Cheap to clone (O(1)); used by the renderer to avoid holding a mutable
-/// borrow on the buffer while the GPU is consuming vertex data.
+/// Cheap to *clone* (O(1) Arc bump); used by the renderer to avoid holding a
+/// mutable borrow on the buffer while the GPU is consuming vertex data.
+///
+/// Note: *creating* the snapshot (`PieceTable::snapshot()`) currently
+/// materialises the logical content once (O(N) copy). The zero-copy
+/// single-piece fast-path is not implemented — see `snapshot()`.
 pub type BufferSnapshot = std::sync::Arc<dyn AsRef<[u8]> + Send + Sync>;
 
 /// Common interface for all text storage backends (Piece Table, Rope, …).
@@ -64,6 +68,8 @@ pub trait TextBuffer: Send + Sync {
     // ── Snapshot ──────────────────────────────────────────────────────────
 
     /// Return an immutable Arc snapshot of the current logical content.
-    /// O(1) unless the implementation needs to materialise the content.
+    /// O(N): the current implementation always materialises the content into
+    /// a fresh allocation. (A true O(1) single-piece fast-path that shares the
+    /// mmap is not implemented yet.)
     fn snapshot(&self) -> BufferSnapshot;
 }
