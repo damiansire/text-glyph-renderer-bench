@@ -15,11 +15,14 @@
  *   - This deliberately limits this PoC: no ligatures, no kerning, no bidi.
  *   - The goal is to measure Canvas throughput, not shaping quality.
  *
- * ImageBitmap transfer:
- *   - We do NOT use `transferToImageBitmap()` + postMessage here because
- *     OffscreenCanvas commit() is more efficient — it avoids an extra copy.
- *   - `canvas.commit()` pushes the current frame to the main thread compositor
- *     without any IPC overhead (the backing store is shared).
+ * Frame presentation:
+ *   - This canvas was obtained via `transferControlToOffscreen()` on the main
+ *     thread, so it is **placeholder-backed**: drawing into its 2D context
+ *     presents to the page automatically at the next frame. There is no manual
+ *     "push frame" step and no postMessage of pixels.
+ *   - We therefore do NOT call `transferToImageBitmap()` + postMessage (that
+ *     would add a copy), and we do NOT call `OffscreenCanvas.commit()` — that
+ *     method was removed from the spec and no longer exists in Chrome/Electron.
  */
 
 let canvas = null;
@@ -95,12 +98,11 @@ self.onmessage = function (e) {
                 ctx.fillText(text, LN_WIDTH + PADDING, y + 2, viewportW - LN_WIDTH - PADDING * 2);
             }
 
-            // ── Commit (compositor-path copy, no IPC serialization) ──────────────
-            // `canvas.commit()` is the OffscreenCanvas-specific call that sends the
-            // current frame to the page compositor without going through postMessage.
-            if (typeof canvas.commit === 'function') {
-                canvas.commit();
-            }
+            // ── Present ──────────────────────────────────────────────────────────
+            // No explicit present call: a canvas transferred via
+            // transferControlToOffscreen() is presented to the page
+            // automatically after this draw. (OffscreenCanvas.commit() was
+            // removed from the spec and is intentionally not used.)
 
             const frameMs = performance.now() - t0;
 
