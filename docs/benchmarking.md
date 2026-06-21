@@ -97,7 +97,10 @@ Rank │ PoC                          │ Est. K2P     │ Rationale
 **Metal 3 + CoreText + Piece Table + MSDF Texture Atlas:**
 
 1. **Piece Table over mmap:** With 0 mutations (scroll only), the table has 1 piece → O(1) access.
-2. **`makeBuffer(bytesNoCopy:)`:** GPU text buffer IS the mmap pages. Zero copies.
+2. **`makeBuffer(bytesNoCopy:)` (design target, not yet implemented):** the GPU
+   *text* buffer would alias the mmap pages — zero copies for the **raw bytes**.
+   This is not the rendered output: glyphs are still drawn from a CPU-rasterized
+   atlas + vertex buffer. No PoC in this repo implements `bytesNoCopy` today.
 3. **Argument Buffers Tier 2:** 1 binding call per frame. Saves 2–5 ms CPU time in dense text (>500 glyphs/frame).
 4. **Lazy shaping with GCD:** Main thread only shapes viewport ± margin. Font fallbacks never block the `CADisplayLink` callback.
 5. **MSDF Atlas:** Glyphs valid at any scale, no re-rasterization on zoom.

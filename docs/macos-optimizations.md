@@ -10,9 +10,14 @@ NVMe Disk ──DMA──► DRAM Pages ──UMA──► GPU L2 Cache
                  mmap base_ptr       MTLBuffer (bytesNoCopy)
                  (CPU reads)         (GPU reads)
 
-⚡ ZERO copies between CPU and GPU. Same physical pages are
-   accessible from both processors via Unified Memory.
+⚡ ZERO copies for the RAW TEXT BYTES between CPU and GPU. The same
+   physical pages are accessible from both processors via Unified Memory.
 ```
+
+> **Scope:** this zero-copy applies to the **raw UTF-8 bytes** reaching the GPU,
+> not to the rendered glyphs. The pixels still come from a CPU-rasterized atlas
+> and a CPU-built vertex buffer. The `MTLBuffer (bytesNoCopy)` path above is a
+> **design target** — no PoC in this repo implements it yet.
 
 **Optimal mmap configuration (macOS / Darwin):**
 ```c

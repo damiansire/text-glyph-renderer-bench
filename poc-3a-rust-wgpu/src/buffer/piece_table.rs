@@ -1,9 +1,19 @@
 //! piece_table.rs — Zero-copy Piece Table over memory-mapped files.
 //!
+//! Scope of "zero-copy" here: it refers to **CPU-side text access**. The
+//! `original` mmap is read without copying the file into a heap buffer, and
+//! `slice_pieces` hands out borrowed `&[u8]` views into the mapped pages.
+//!
+//! It does NOT mean the GPU renders straight from the mmap. The GPU consumes a
+//! rasterized glyph atlas plus a CPU-built vertex buffer — not the raw UTF-8
+//! bytes of the file. A true `mmap → makeBuffer(bytesNoCopy:)` page-aligned
+//! path (Metal) that feeds the mapped pages to a GPU buffer is NOT implemented
+//! in this crate (there is no wgpu/Metal code here yet). Do not read the line
+//! below as an existing GPU zero-copy path.
+//!
 //! Architecture:
-//!   - `original` buffer: read-only `memmap2::Mmap` of the source file.
-//!     On Apple Silicon the same physical pages are shared with the GPU
-//!     via `wgpu::Buffer` (mapped at creation) — zero CPU→GPU copy.
+//!   - `original` buffer: read-only `memmap2::Mmap` of the source file
+//!     (CPU-side zero-copy reads only).
 //!   - `add` buffer: `Vec<u8>` for inserted text (append-only).
 //!   - `pieces`: ordered list of `Piece` structs pointing into either buffer.
 //!

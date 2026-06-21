@@ -50,9 +50,9 @@ Piece Table:
 | Serialization | O(N_pieces × avg_size) | recombine pieces |
 
 **Critical strength for this benchmark:**
-- The original buffer **is the mmap directly**. `Piece.start` + `Piece.len` index mapped memory without any `memcpy`.
+- The original buffer **is the mmap directly**. `Piece.start` + `Piece.len` index mapped memory without any `memcpy`. This is **CPU-side** zero-copy text access.
 - For a read/scroll file, there are **zero mutations to the Add buffer** → the piece table has exactly 1 entry.
-- Metal's `makeBuffer(bytesNoCopy:)` points to the same mmap → the rendered glyph comes from the same physical page as disk. **Zero total copies.**
+- Where Metal's `makeBuffer(bytesNoCopy:)` over the mmap helps, it makes the **raw UTF-8 bytes** available to the GPU without a copy. It does **not** mean "the rendered glyph comes from the same disk page": the rendered glyph is produced from a **CPU-rasterized atlas + a CPU-built vertex buffer**, not from the raw bytes. (And note: no PoC in this repo actually implements `bytesNoCopy` yet — this is the design target, not measured behaviour.)
 
 ---
 

@@ -83,13 +83,21 @@ Highest complexity and highest potential native performance.
 ```
 1. open(path) → fd
 2. fstat(fd) → size (100 MB)
-3. mmap(NULL, size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0) → base_ptr
+3. mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0) → base_ptr
+   (MAP_POPULATE is Linux-only; on macOS pre-fault via MADV_WILLNEED below.)
 4. madvise(base_ptr, size, MADV_SEQUENTIAL | MADV_WILLNEED)
 5. Register base_ptr as MTLBuffer with device.makeBuffer(bytesNoCopy:...)
    → Metal driver reuses the same physical pages without copying.
 ```
 
-> **UMA key:** On Apple Silicon, CPU and GPU share the same physical DRAM. `makeBuffer(bytesNoCopy:)` creates a buffer descriptor pointing to the already-mapped pages. The GPU reads text directly from mmap pages without any `memcpy`. Literally zero-copy end-to-end.
+> **UMA key (and its limit):** On Apple Silicon, CPU and GPU share the same
+> physical DRAM. `makeBuffer(bytesNoCopy:)` creates a buffer descriptor pointing
+> to the already-mapped pages, so the GPU can read the **raw text bytes** without
+> a `memcpy`. This is **not** "zero-copy end-to-end rendering": the GPU still
+> renders glyphs from a CPU-rasterized atlas and a CPU-built vertex buffer; the
+> `bytesNoCopy` mmap is only the source of the *bytes*, not of the *pixels*.
+> **Status:** this subsystem is a design target — no PoC in this repo implements
+> the `bytesNoCopy` path today.
 
 **Subsystem 2: SIMD newline scan (Accelerate/NEON)**
 
