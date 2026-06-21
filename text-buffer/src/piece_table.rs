@@ -60,17 +60,18 @@ impl Piece {
 }
 
 // ── Snapshot ────────────────────────────────────────────────────────────────
-
-/// An immutable, Arc-wrapped materialization of the current logical content.
-/// Created by `PieceTable::snapshot()`, cheap to clone (O(1) Arc bump).
-///
-/// Creation cost: O(N). `snapshot()` always copies the logical content into a
-/// fresh `Vec<u8>` (see its impl). The single-piece fast-path that would share
-/// the mmap without copying is **not implemented**: `original` is a plain
-/// `Mmap` (not `Arc<Mmap>`), so the snapshot cannot reference the mapped pages.
+//
+// `BufferSnapshot` (see `lib.rs`) is an immutable, Arc-wrapped materialization
+// of the current logical content, cheap to clone (O(1) Arc bump).
+//
+// Creation cost: O(N). `snapshot()` always copies the logical content into a
+// fresh `Vec<u8>` (see its impl). The single-piece fast-path that would share
+// the mmap without copying is **not implemented**: `original` is a plain
+// `Mmap` (not `Arc<Mmap>`), so the snapshot cannot reference the mapped pages.
 
 // ── PieceTable ──────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
 pub struct PieceTable {
     /// Memory-mapped original file (read-only, shared with GPU on UMA).
     original: Mmap,
@@ -251,7 +252,7 @@ impl TextBuffer for PieceTable {
             }
 
             // Compute the overlap between [global_offset..piece_end] and [start..end]
-            let local_start = if global_offset < start { start - global_offset } else { 0 };
+            let local_start = start.saturating_sub(global_offset);
             let local_end = (end - global_offset).min(piece.len);
             let data = &self.resolve(piece)[local_start..local_end];
             let should_continue = f(data, global_offset + local_start);
