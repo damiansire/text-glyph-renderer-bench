@@ -1,10 +1,12 @@
 /**
  * atlas.js — LRU Texture Atlas (2048×2048) for PoC 1C WebGPU
  *
- * Strategy: Shelf packing + LRU eviction.
+ * Strategy: Shelf packing + LRU eviction + slot free-list.
  *   - Atlas is divided into shelves of fixed height (= max glyph height on that shelf).
  *   - Glyphs pack left-to-right on a shelf. When a shelf is full, a new shelf starts.
- *   - When the atlas is full, `evict()` removes the least-recently-used glyph.
+ *   - When the atlas is full, the least-recently-used glyph is evicted and its
+ *     slot rectangle returns to a free-list, so a later glyph reuses that space
+ *     instead of forcing a whole-atlas rebuild.
  *
  * Key: GlyphId is a string `"${fontFamily}:${codepoint}:${sizePx}"`.
  *
@@ -40,6 +42,12 @@ class TextureAtlas {
         // Shelf state
         this._shelves = [];      // Array<{ nextX, y, height }>
         this._nextShelfY = 0;
+
+        // Free-list of reclaimed slot rectangles (from LRU eviction). A future
+        // glyph reuses one of these instead of growing the atlas append-only.
+        this._freeList = [];     // Array<{ x, y, w, h }>  (h = shelf row height)
+        // Allocation rectangle per cached glyph, needed to free it on eviction.
+        this._rects = new Map(); // GlyphKey → { x, y, w, h }
 
         // Glyph cache: Map<GlyphKey, AtlasSlot>
         // AtlasSlot: { u, v, w, h, offsetX, offsetY, advance }  all in atlas-pixels
@@ -120,6 +128,10 @@ class TextureAtlas {
         const slot = this._allocate(pw, ph);
         if (!slot) return null;
 
+        // Remember the rectangle this glyph occupies (the slot's full row
+        // height) so `_evictLRU` can return it to the free-list later.
+        this._rects.set(key, { x: slot.atlasX, y: slot.atlasY, w: pw, h: slot.shelfHeight });
+
         // Rasterize to OffscreenCanvas
         this._rasterCanvas.width = pw;
         this._rasterCanvas.height = ph;
@@ -163,26 +175,62 @@ class TextureAtlas {
     // ── Shelf packing ─────────────────────────────────────────────────────────
 
     _allocate(w, h) {
-        // Try to fit on an existing shelf
-        for (const shelf of this._shelves) {
-            if (shelf.height >= h && shelf.nextX + w <= ATLAS_SIZE) {
-                const x = shelf.nextX;
-                shelf.nextX += w;
-                return { atlasX: x, atlasY: shelf.y };
+        for (;;) {
+            // 1. Reuse a reclaimed slot if one fits (real free-list).
+            const reused = this._takeFromFreeList(w, h);
+            if (reused) return reused;
+
+            // 2. Fit on an existing shelf.
+            for (const shelf of this._shelves) {
+                if (shelf.height >= h && shelf.nextX + w <= ATLAS_SIZE) {
+                    const x = shelf.nextX;
+                    shelf.nextX += w;
+                    return { atlasX: x, atlasY: shelf.y, shelfHeight: shelf.height };
+                }
+            }
+
+            // 3. Start a new shelf if there is vertical room.
+            if (this._nextShelfY + h <= ATLAS_SIZE) {
+                const y = this._nextShelfY;
+                this._shelves.push({ nextX: w, y, height: h });
+                this._nextShelfY += h;
+                return { atlasX: 0, atlasY: y, shelfHeight: h };
+            }
+
+            // 4. Atlas full: evict the LRU glyph (which returns its slot to the
+            //    free-list) and loop to retry. No periodic whole-atlas rebuild,
+            //    no deep recursion — just reclaim until the glyph fits or there
+            //    is nothing left to evict.
+            if (!this._evictLRU()) return null;
+        }
+    }
+
+    /**
+     * Best-fit search of the free-list for a rectangle that holds a `w`×`h`
+     * glyph (the slot's row height must be ≥ h). On a hit the slot is removed
+     * and any unused width to its right is pushed back so it stays reusable.
+     *
+     * @returns {{ atlasX: number, atlasY: number, shelfHeight: number } | null}
+     */
+    _takeFromFreeList(w, h) {
+        let bestIdx = -1;
+        let bestWaste = Infinity;
+        for (let i = 0; i < this._freeList.length; i++) {
+            const r = this._freeList[i];
+            if (r.w >= w && r.h >= h) {
+                const waste = (r.w - w) + (r.h - h);
+                if (waste < bestWaste) { bestWaste = waste; bestIdx = i; }
             }
         }
-        // Start a new shelf
-        if (this._nextShelfY + h > ATLAS_SIZE) {
-            // Atlas full — evict LRU and retry
-            if (!this._evictLRU()) return null;
-            return this._allocate(w, h); // retry after eviction
+        if (bestIdx < 0) return null;
+
+        const r = this._freeList.splice(bestIdx, 1)[0];
+        // Split off the leftover width so it can be reused later (skip slivers).
+        const REMAINDER_MIN = 4; // px
+        if (r.w - w >= REMAINDER_MIN) {
+            this._freeList.push({ x: r.x + w, y: r.y, w: r.w - w, h: r.h });
         }
-        const shelf = { nextX: w, y: this._nextShelfY, height: h };
-        this._shelves.push(shelf);
-        const x = 0;
-        const y = this._nextShelfY;
-        this._nextShelfY += h;
-        return { atlasX: x, atlasY: y };
+        return { atlasX: r.x, atlasY: r.y, shelfHeight: r.h };
     }
 
     // ── LRU management ────────────────────────────────────────────────────────
@@ -217,25 +265,18 @@ class TextureAtlas {
         if (this._lruTail.prev) this._lruTail.prev.next = null;
         this._lruTail = this._lruTail.prev;
         if (!this._lruTail) this._lruHead = null;
-        this.stats.evictions++;
-        // Note: we don't reclaim atlas space (shelf packing is append-only).
-        // A production atlas would use a free-list. Here we simplify by doing
-        // only LRU accounting; when truly full we clear and rebuild.
-        // For the benchmark this rarely triggers since we use a limited character set.
-        if (this.stats.evictions % 512 === 0) {
-            // Full clear+rebuild every 512 evictions as a safety valve
-            this._rebuild();
-        }
-        return true;
-    }
 
-    _rebuild() {
-        this._shelves = [];
-        this._nextShelfY = 0;
-        this._cache = new Map();
-        this._lruHead = null;
-        this._lruTail = null;
-        this._lruMap = new Map();
+        // Reclaim the slot: return its rectangle to the free-list so a later
+        // glyph can reuse the space. This is what stops a single miss against a
+        // full atlas from cascading into ~512 evictions + a whole-atlas rebuild.
+        const rect = this._rects.get(key);
+        if (rect) {
+            this._rects.delete(key);
+            this._freeList.push(rect);
+        }
+
+        this.stats.evictions++;
+        return true;
     }
 
     destroy() {
