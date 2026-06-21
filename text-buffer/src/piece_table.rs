@@ -320,7 +320,8 @@ impl TextBuffer for PieceTable {
             self.pieces.splice(piece_idx..=piece_idx, [left, new_piece, right]);
         }
 
-        self.rebuild_line_index();
+        // Patch the line index in place instead of rescanning the whole document.
+        self.line_index.record_insert(byte_offset, text.as_bytes());
     }
 
     fn delete(&mut self, range: Range<usize>) {
@@ -355,7 +356,8 @@ impl TextBuffer for PieceTable {
         }
 
         self.pieces.splice(start_piece..=end_piece, replacement);
-        self.rebuild_line_index();
+        // Patch the line index in place instead of rescanning the whole document.
+        self.line_index.record_delete(range.start, range.end);
     }
 
     fn snapshot(&self) -> super::BufferSnapshot {

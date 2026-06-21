@@ -137,6 +137,68 @@ impl LineIndex {
         let last = self.byte_to_line(byte_end.saturating_sub(1)).min(self.offsets.len() - 1);
         (first, last)
     }
+
+    // ── Incremental maintenance ─────────────────────────────────────────────
+    //
+    // Edits patch the offset table in place instead of rescanning the whole
+    // document. Cost is O(L) in the number of lines (to shift the offsets after
+    // the edit) plus O(edit length) for the newline scan — never an O(N) memcpy
+    // + rescan of the entire buffer on each keystroke.
+
+    /// Update the index for an insertion of `inserted` at byte position `at`.
+    ///
+    /// Line starts strictly after `at` shift right by `inserted.len()`; the
+    /// newlines contained in `inserted` splice in as new line starts. A line
+    /// start exactly at `at` stays put — the inserted bytes land before it.
+    pub(crate) fn record_insert(&mut self, at: usize, inserted: &[u8]) {
+        let ins_len = inserted.len();
+        if ins_len == 0 {
+            return;
+        }
+
+        // Everything at a byte position > `at` moves right by `ins_len`.
+        let split = self.offsets.partition_point(|&o| (o as usize) <= at);
+        for o in &mut self.offsets[split..] {
+            *o = Self::narrow(*o as usize + ins_len);
+        }
+
+        // Each '\n' at position `p` within `inserted` begins a line at
+        // `at + p + 1`. These all sort between the untouched prefix and the
+        // shifted suffix, so they splice in at `split`.
+        let new_starts: Vec<u32> = memchr_iter(b'\n', inserted)
+            .map(|p| Self::narrow(at + p + 1))
+            .collect();
+        if !new_starts.is_empty() {
+            self.offsets.splice(split..split, new_starts);
+        }
+    }
+
+    /// Update the index for a deletion of the byte range `[start, end)`.
+    ///
+    /// Line starts whose newline fell inside the range disappear; the survivors
+    /// after the range shift left by the deleted length. `offsets[0]` (value 0)
+    /// is never inside `(start, end]`, so line 0 is always preserved.
+    pub(crate) fn record_delete(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let del_len = end - start;
+
+        // A line start with value in `(start, end]` corresponds to a '\n' that
+        // lived inside the deleted bytes, so it is gone.
+        self.offsets.retain(|&o| {
+            let v = o as usize;
+            v <= start || v > end
+        });
+
+        // Survivors located after the deleted range move left by `del_len`.
+        for o in &mut self.offsets {
+            let v = *o as usize;
+            if v > end {
+                *o = Self::narrow(v - del_len);
+            }
+        }
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -223,5 +285,85 @@ mod tests {
         assert_eq!(li.line_start(0), 0);
         assert_eq!(li.line_start(1), 10); // "line 0000\n" = 10 bytes
         assert_eq!(li.byte_to_line(10), 1);
+    }
+
+    // ── Incremental maintenance: must match a full rebuild ──────────────────
+
+    /// Apply `record_insert` and confirm the patched table is identical to a
+    /// fresh build of the post-edit bytes.
+    fn check_insert(initial: &str, at: usize, ins: &str) {
+        let mut li = LineIndex::build(initial.as_bytes());
+        li.record_insert(at, ins.as_bytes());
+
+        let mut bytes = initial.as_bytes().to_vec();
+        bytes.splice(at..at, ins.bytes());
+        let expected = LineIndex::build(&bytes);
+
+        assert_eq!(
+            li.offsets, expected.offsets,
+            "record_insert({at}, {ins:?}) over {initial:?} diverged from a full rebuild"
+        );
+    }
+
+    /// Apply `record_delete` and confirm the patched table is identical to a
+    /// fresh build of the post-edit bytes.
+    fn check_delete(initial: &str, start: usize, end: usize) {
+        let mut li = LineIndex::build(initial.as_bytes());
+        li.record_delete(start, end);
+
+        let mut bytes = initial.as_bytes().to_vec();
+        bytes.drain(start..end);
+        let expected = LineIndex::build(&bytes);
+
+        assert_eq!(
+            li.offsets, expected.offsets,
+            "record_delete({start}..{end}) over {initial:?} diverged from a full rebuild"
+        );
+    }
+
+    #[test]
+    fn record_insert_matches_rebuild() {
+        check_insert("world", 0, "hello ");   // before line 0, no newline
+        check_insert("hello", 5, "\nworld");  // append newline + text
+        check_insert("ab\ncd", 0, "X");       // insert at 0, shifts later starts
+        check_insert("ab\ncd", 3, "X");       // exactly at a line start (stays put)
+        check_insert("ab\ncd", 2, "X\nY");    // newline inside inserted text
+        check_insert("a\nb\nc", 2, "XY");     // multi-line, mid, no newline
+        check_insert("abcd", 2, "X\nY\nZ");   // several newlines inserted
+        check_insert("", 0, "fresh\nstart");  // into an empty buffer
+        check_insert("a\nb\nc\nd", 4, "\n");  // lone newline at a boundary
+    }
+
+    #[test]
+    fn record_delete_matches_rebuild() {
+        check_delete("a\nb\nc", 2, 4);        // drop "b\n" (one newline)
+        check_delete("a\nb\nc\nd", 2, 4);     // drop one newline, shift the rest
+        check_delete("abcd\nefgh", 2, 7);     // delete spanning a newline
+        check_delete("a\nbcd\ne", 3, 4);      // delete within a line
+        check_delete("ab\ncd", 2, 3);         // delete just the newline
+        check_delete("hello world", 0, 11);   // delete everything
+        check_delete("a\nb\nc\n", 5, 6);      // delete the trailing newline
+        check_delete("a\nb\nc", 0, 2);        // delete first line incl. newline
+    }
+
+    #[test]
+    fn record_edits_sequence_matches_rebuild() {
+        // A sequence of incremental edits must match a rebuild of the final bytes.
+        let mut li = LineIndex::build(b"alpha\nbeta\ngamma");
+        let mut bytes = b"alpha\nbeta\ngamma".to_vec();
+
+        li.record_insert(6, b"X\n"); // -> "alpha\nX\nbeta\ngamma"
+        bytes.splice(6..6, *b"X\n");
+
+        li.record_delete(0, 3); // drop "alp"
+        bytes.drain(0..3);
+
+        let n = bytes.len();
+        li.record_insert(n, b"\n"); // trailing newline
+        bytes.splice(n..n, *b"\n");
+
+        let expected = LineIndex::build(&bytes);
+        assert_eq!(li.offsets, expected.offsets);
+        assert_eq!(li.count(), expected.count());
     }
 }
