@@ -10,6 +10,7 @@ name = "poc3a"
 path = "src/main.rs"
 
 [dependencies]
+text-buffer = { path = "../text-buffer" }
 memmap2    = { workspace = true }
 memchr     = { workspace = true }
 tokio      = { workspace = true }

@@ -1,9 +1,19 @@
 //! piece_table.rs — Zero-copy Piece Table over memory-mapped files.
 //!
+//! Scope of "zero-copy" here: it refers to **CPU-side text access**. The
+//! `original` mmap is read without copying the file into a heap buffer, and
+//! `slice_pieces` hands out borrowed `&[u8]` views into the mapped pages.
+//!
+//! It does NOT mean the GPU renders straight from the mmap. The GPU consumes a
+//! rasterized glyph atlas plus a CPU-built vertex buffer — not the raw UTF-8
+//! bytes of the file. A true `mmap → makeBuffer(bytesNoCopy:)` page-aligned
+//! path (Metal) that feeds the mapped pages to a GPU buffer is NOT implemented
+//! in this crate (there is no wgpu/Metal code here yet). Do not read the line
+//! below as an existing GPU zero-copy path.
+//!
 //! Architecture:
-//!   - `original` buffer: read-only `memmap2::Mmap` of the source file.
-//!     On Apple Silicon the same physical pages are shared with the GPU
-//!     via `wgpu::Buffer` (mapped at creation) — zero CPU→GPU copy.
+//!   - `original` buffer: read-only `memmap2::Mmap` of the source file
+//!     (CPU-side zero-copy reads only).
 //!   - `add` buffer: `Vec<u8>` for inserted text (append-only).
 //!   - `pieces`: ordered list of `Piece` structs pointing into either buffer.
 //!
@@ -14,8 +24,8 @@
 //! Line index is maintained by `LineIndex` (see `line_index.rs`) and is
 //! rebuilt lazily after batches of mutations.
 
-use super::{BufferSnapshot, TextBuffer};
-use crate::buffer::line_index::LineIndex;
+use super::TextBuffer;
+use crate::line_index::LineIndex;
 
 use memmap2::{Mmap, MmapOptions};
 use std::fs::File;
@@ -53,8 +63,10 @@ impl Piece {
 /// An immutable, Arc-wrapped materialization of the current logical content.
 /// Created by `PieceTable::snapshot()`, cheap to clone (O(1) Arc bump).
 ///
-/// For single-piece tables (pure mmap read) this shares the `Arc<Mmap>` and
-/// stores a byte range — no allocation, no copy.
+/// Creation cost: O(N). `snapshot()` always copies the logical content into a
+/// fresh `Vec<u8>` (see its impl). The single-piece fast-path that would share
+/// the mmap without copying is **not implemented**: `original` is a plain
+/// `Mmap` (not `Arc<Mmap>`), so the snapshot cannot reference the mapped pages.
 
 // ── PieceTable ──────────────────────────────────────────────────────────────
 
@@ -74,20 +86,26 @@ pub struct PieceTable {
 impl PieceTable {
     // ── Constructors ─────────────────────────────────────────────────────
 
-    /// Load a file by memory-mapping it.  On Apple Silicon the kernel maps
-    /// the file into the unified address space; the GPU can read the same
-    /// pages via `wgpu::Buffer` without a copy.
+    /// Load a file by memory-mapping it.
     ///
-    /// `MAP_POPULATE` pre-faults pages so the first render doesn't stall.
+    /// Pre-faulting note: `MmapOptions::populate()` maps to `MAP_POPULATE`,
+    /// which is a **Linux-only** flag (it is a no-op on Darwin/macOS, where
+    /// the kernel has no equivalent mmap flag). On macOS the pre-fault is done
+    /// instead by `madvise(MADV_WILLNEED)` plus the sequential line-index scan
+    /// below, which faults every page in on first touch. We keep `.populate()`
+    /// for the Linux benchmark host; it costs nothing elsewhere.
     pub fn from_file(path: &Path) -> io::Result<Self> {
         let file = File::open(path)?;
         let mmap = unsafe {
             MmapOptions::new()
-                .populate() // pre-fault pages — avoids stalls during first scroll
+                .populate() // pre-fault pages on Linux; no-op on macOS (see above).
                 .map(&file)?
         };
 
-        // Advise sequential access for the initial line-index scan
+        // Readahead hints for the initial line-index scan. These are distinct
+        // from TLB behaviour: `Sequential` tunes the readahead window, while
+        // `WillNeed` asks the kernel to start faulting the pages in (the macOS
+        // pre-fault path, since MAP_POPULATE does nothing there).
         #[cfg(unix)]
         {
             use memmap2::Advice;
@@ -118,7 +136,7 @@ impl PieceTable {
         // We store the in-memory data in the add buffer and make one Add piece.
         let mut pt = Self {
             original: {
-                // Safety: empty anonymous mmap for the "original" slot.
+                // empty anonymous mmap for the "original" slot.
                 let mut opts = MmapOptions::new();
                 opts.len(1).map_anon().expect("anon mmap").make_read_only().expect("make_read_only")
             },
@@ -474,7 +492,7 @@ mod tests {
         use std::io::Write;
 
         let mut path = std::env::temp_dir();
-        path.push(format!("poc3b_pt_test_{}.txt", std::process::id()));
+        path.push(format!("text_buffer_pt_test_{}.txt", std::process::id()));
         {
             let mut f = std::fs::File::create(&path).expect("create tmp file");
             f.write_all(b"alpha\nbeta\ngamma").expect("write tmp file");

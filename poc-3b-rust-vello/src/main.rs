@@ -14,9 +14,8 @@
 //!       Zero atlas memory. Perfect quality at all scales.
 
 mod rendering;
-mod buffer;
 
-use buffer::{PieceTable, TextBuffer};
+use poc_3b_rust_vello::{PieceTable, TextBuffer};
 use rendering::scene_builder::{TextSceneBuilder, VelloFont};
 
 use std::path::PathBuf;

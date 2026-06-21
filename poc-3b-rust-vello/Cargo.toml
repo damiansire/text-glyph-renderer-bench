@@ -14,6 +14,9 @@ name = "poc_3b_rust_vello"
 path = "src/lib.rs"
 
 [dependencies]
+# Shared text buffer (piece table + line index), consumed by 3A and 3B alike.
+text-buffer = { path = "../text-buffer" }
+
 # Vello: GPU-first vector renderer (Compute Shaders, no texture atlas)
 vello = { git = "https://github.com/linebender/vello", branch = "main" }
 

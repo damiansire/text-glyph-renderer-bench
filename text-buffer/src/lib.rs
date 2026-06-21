@@ -1,9 +1,17 @@
-//! buffer module — TextBuffer trait + implementations
+//! text-buffer — `TextBuffer` trait + zero-copy piece table over mmap.
+//!
+//! Shared storage layer for the Rust PoCs (`poc-3a-rust-wgpu`,
+//! `poc-3b-rust-vello`). The PoCs differ only in their renderer; the text
+//! buffer lives here so a fix lands once instead of being copy-pasted into
+//! both crates (which had already started to diverge).
 
 pub mod line_index;
 pub mod piece_table;
 
 use std::ops::Range;
+
+pub use line_index::LineIndex;
+pub use piece_table::PieceTable;
 
 /// Snapshot ref-counted immutable view into the buffer.
 /// Cheap to *clone* (O(1) Arc bump); used by the renderer to avoid holding a

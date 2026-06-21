@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "text-buffer",
     "poc-3a-rust-wgpu",
     "poc-3b-rust-vello",
 ]
