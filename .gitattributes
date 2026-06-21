@@ -1,0 +1,28 @@
+# Normaliza saltos de linea: LF en el repo para todo el texto fuente.
+* text=auto eol=lf
+
+# Tipos explicitamente texto (LF aun en Windows).
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.glsl  text eol=lf
+*.wgsl  text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.py    text eol=lf
+*.sh    text eol=lf
+
+# Binarios: nunca tocar EOL ni intentar diff de texto.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ttf   binary
+*.otf   binary
+*.bin   binary
+*.ico   binary
