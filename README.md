@@ -12,16 +12,16 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design.
 
 ## Included PoCs
 
-| Folder | Stack | Category |
-|--------|-------|----------|
-| `poc-1a-web-dom` | Electron + DOM | Web Sandboxed |
-| `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed |
-| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed |
-| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed |
-| `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS |
-| `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS |
-| `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems |
-| `poc-3b-rust-vello` | Rust + Vello | Systems |
+| Folder | Stack | Category | Status |
+|--------|-------|----------|--------|
+| `poc-1a-web-dom` | Electron + DOM | Web Sandboxed | — |
+| `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed | — |
+| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | — |
+| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed | — |
+| `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | — |
+| `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | — |
+| `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | buffer/line-index only (no GPU render yet) |
+| `poc-3b-rust-vello` | Rust + Vello | Systems | **render NOT implemented** — `build_scene` returns an empty `Scene` (no geometry) |
 
 ## Initial Setup
 

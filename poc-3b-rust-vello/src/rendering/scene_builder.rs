@@ -44,15 +44,18 @@ impl TextSceneBuilder {
         Self { font }
     }
 
-    /// Build a Vello `Scene` for the given viewport.
+    /// Emulate the **CPU cost** of building a Vello `Scene` for the given
+    /// viewport. **This does NOT build any geometry**: it walks the visible
+    /// lines and maps each char to a glyph id (the charmap lookup cost), but it
+    /// appends nothing to the scene and returns an **empty** `Scene`. Vello's
+    /// `GlyphProvider` was removed in vello 0.2, so the real outline/`GlyphRun`
+    /// path is not wired up here — see the PoC status in the README.
     ///
     /// `lines`:       all lines pre-split from the file
     /// `first_line`:  first visible line (0-based)
     /// `viewport_h`:  viewport height in pixels
     /// `line_height`: line height in pixels
     /// `scroll_y`:    vertical scroll offset in pixels
-    ///
-    /// Returns a `Scene` ready for submission to `vello::Renderer`.
     pub fn build_scene(
         &self,
         lines: &[&[u8]],
@@ -61,36 +64,42 @@ impl TextSceneBuilder {
         line_height: f64,
         scroll_y: f64,
     ) -> Scene {
-        let mut scene = Scene::new();
+        let scene = Scene::new();
 
-        let font_size = Size::new(self.font.font_size);
+        // Nothing to traverse for an empty document. Guard before computing
+        // `lines.len() - 1`, which would underflow on an empty slice.
+        if lines.is_empty() {
+            return scene;
+        }
+
+        let _font_size = Size::new(self.font.font_size);
         let font_ref  = FontRef::new(&self.font.data).expect("valid font");
         let charmap   = font_ref.charmap();
 
-        let text_color = Color::from_rgb8(0xC9, 0xD1, 0xD9);
+        let _text_color = Color::from_rgb8(0xC9, 0xD1, 0xD9);
 
         let last_line = (first_line + (viewport_h / line_height) as usize + 2).min(lines.len() - 1);
 
         for li in first_line..=last_line {
-            let y    = li as f64 * line_height - scroll_y;
+            let _y   = li as f64 * line_height - scroll_y;
             let line = lines[li];
-            let text = std::str::from_utf8(line).unwrap_or("");
+            // Decode lossily so invalid UTF-8 is replaced (U+FFFD) and still
+            // counted, rather than silently dropping the whole line.
+            let text = String::from_utf8_lossy(line);
 
-            let mut x = 52.0_f64; // left margin (line number space)
+            let mut x = 52.0_f64; // left margin (line number space).
 
             for ch in text.chars() {
-                let glyph_id = charmap.map(ch).unwrap_or_default();
-                // In a real Vello app we'd build the path from the skrifa outline.
-                // For this headless scene-build cost emulation, we drop the exact glyph encoding 
-                // because `vello::glyph::GlyphProvider` was removed in vello 0.2.
-                // We just simulate the loop iteration and map.
-                
-                // Advance (approximate using EM width for now)
-                x += self.font.font_size as f64 * 0.6; // monospace em width approximation
+                let _glyph_id = charmap.map(ch).unwrap_or_default();
+                // NOTE: a real Vello app would build the path from the skrifa
+                // outline and append a GlyphRun to `scene`. Here we only pay the
+                // charmap lookup; no geometry is produced (see method docs).
+
+                // Advance (approximate using EM width for now).
+                x += self.font.font_size as f64 * 0.6; // monospace em width approximation.
             }
         }
 
-        // Clear background (Vello composites on transparent; caller fills bg)
         scene
     }
 }
