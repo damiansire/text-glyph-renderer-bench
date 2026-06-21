@@ -59,11 +59,14 @@ impl Args {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "bench scaffolding: scroll->line index is a deliberate floor and elapsed micros fit in u64"
+)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     println!("PoC 3B — Rust + Vello");
-    println!("File: {}", args.file.display());
     println!("File: {}", args.file.display());
 
     // ── Load text file ─────────────────────────────────────────────────────

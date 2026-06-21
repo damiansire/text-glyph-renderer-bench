@@ -21,13 +21,13 @@ use std::sync::Arc;
 
 // ── FontData wrapper ──────────────────────────────────────────────────────────
 
-pub struct VelloFont {
-    pub data: Arc<Vec<u8>>,
+pub(crate) struct VelloFont {
+    pub(crate) data: Arc<Vec<u8>>,
     font_size: f32,
 }
 
 impl VelloFont {
-    pub fn load(path: &std::path::Path, size_px: f32) -> std::io::Result<Self> {
+    pub(crate) fn load(path: &std::path::Path, size_px: f32) -> std::io::Result<Self> {
         let data = std::fs::read(path)?;
         Ok(Self { data: Arc::new(data), font_size: size_px })
     }
@@ -35,12 +35,12 @@ impl VelloFont {
 
 // ── SceneBuilder helper ───────────────────────────────────────────────────────
 
-pub struct TextSceneBuilder {
+pub(crate) struct TextSceneBuilder {
     font: VelloFont,
 }
 
 impl TextSceneBuilder {
-    pub fn new(font: VelloFont) -> Self {
+    pub(crate) fn new(font: VelloFont) -> Self {
         Self { font }
     }
 
@@ -56,13 +56,17 @@ impl TextSceneBuilder {
     /// `viewport_h`:  viewport height in pixels
     /// `line_height`: line height in pixels
     /// `scroll_y`:    vertical scroll offset in pixels
-    pub fn build_scene(
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "viewport height / line height -> visible line count is a deliberate floor"
+    )]
+    pub(crate) fn build_scene(
         &self,
         lines: &[&[u8]],
         first_line: usize,
         viewport_h: f64,
         line_height: f64,
-        scroll_y: f64,
+        _scroll_y: f64,
     ) -> Scene {
         let scene = Scene::new();
 
@@ -80,23 +84,14 @@ impl TextSceneBuilder {
 
         let last_line = (first_line + (viewport_h / line_height) as usize + 2).min(lines.len() - 1);
 
-        for li in first_line..=last_line {
-            let _y   = li as f64 * line_height - scroll_y;
-            let line = lines[li];
+        // As the method docs state, the only per-glyph cost emulated here is the
+        // charmap lookup; no geometry (positions/outlines) is produced.
+        for line in &lines[first_line..=last_line] {
             // Decode lossily so invalid UTF-8 is replaced (U+FFFD) and still
             // counted, rather than silently dropping the whole line.
             let text = String::from_utf8_lossy(line);
-
-            let mut x = 52.0_f64; // left margin (line number space).
-
             for ch in text.chars() {
                 let _glyph_id = charmap.map(ch).unwrap_or_default();
-                // NOTE: a real Vello app would build the path from the skrifa
-                // outline and append a GlyphRun to `scene`. Here we only pay the
-                // charmap lookup; no geometry is produced (see method docs).
-
-                // Advance (approximate using EM width for now).
-                x += self.font.font_size as f64 * 0.6; // monospace em width approximation.
             }
         }
 

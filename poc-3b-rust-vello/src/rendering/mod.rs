@@ -1,1 +1,1 @@
-pub mod scene_builder;
+pub(crate) mod scene_builder;
