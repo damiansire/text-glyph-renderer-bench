@@ -3,6 +3,9 @@ name    = "poc-3a-rust-wgpu"
 version = "0.1.0"
 edition = "2021"
 rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 description = "PoC 3A — Rust + wgpu (Metal backend) + HarfBuzz/rustybuzz text shaping"
 
 [[bin]]

@@ -3,6 +3,9 @@ name    = "text-buffer"
 version = "0.1.0"
 edition = "2021"
 rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
 description = "Piece table zero-copy sobre mmap + indice de lineas SIMD, compartido por las PoCs Rust (3A/3B)."
 
 [lib]
