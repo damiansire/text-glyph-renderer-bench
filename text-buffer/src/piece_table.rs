@@ -21,8 +21,9 @@
 //! to the entire `original` buffer.  Inserts and deletes add/split pieces
 //! without copying the original data.
 //!
-//! Line index is maintained by `LineIndex` (see `line_index.rs`) and is
-//! rebuilt lazily after batches of mutations.
+//! Line index is maintained by `LineIndex` (see `line_index.rs`): `from_*`
+//! builds it once on load and `insert`/`delete` patch it incrementally, so no
+//! edit triggers a full rescan of the document.
 
 use super::TextBuffer;
 use crate::line_index::LineIndex;
@@ -77,10 +78,9 @@ pub struct PieceTable {
     add_buffer: Vec<u8>,
     /// Ordered sequence of pieces (the logical document).
     pieces: Vec<Piece>,
-    /// Pre-computed byte offsets of every line start (SIMD-built).
+    /// Pre-computed byte offsets of every line start (SIMD-built),
+    /// patched in place by `insert`/`delete`.
     line_index: LineIndex,
-    /// True when pieces changed and `line_index` needs rebuilding.
-    dirty: bool,
 }
 
 impl PieceTable {
@@ -126,15 +126,16 @@ impl PieceTable {
                 len,
             }],
             line_index,
-            dirty: false,
         })
     }
 
     /// Create an in-memory PieceTable from a byte slice (for tests / REPL).
     pub fn from_bytes(data: Vec<u8>) -> Self {
         let len = data.len();
-        // We store the in-memory data in the add buffer and make one Add piece.
-        let mut pt = Self {
+        // The single Add piece covers all of `data`, so the line index can be
+        // built directly from it — no materialise round-trip needed.
+        let line_index = LineIndex::build(&data);
+        Self {
             original: {
                 // empty anonymous mmap for the "original" slot.
                 let mut opts = MmapOptions::new();
@@ -146,11 +147,8 @@ impl PieceTable {
                 start: 0,
                 len,
             }],
-            line_index: LineIndex::empty(),
-            dirty: true,
-        };
-        pt.rebuild_line_index();
-        pt
+            line_index,
+        }
     }
 
     // ── Buffer resolution ─────────────────────────────────────────────────
@@ -164,20 +162,6 @@ impl PieceTable {
     }
 
     // ── Line index ────────────────────────────────────────────────────────
-
-    fn rebuild_line_index(&mut self) {
-        // Materialise logical content into a temporary Vec for scanning.
-        // This is only called after mutations — not on the hot render path.
-        let content = self.materialise();
-        self.line_index = LineIndex::build(&content);
-        self.dirty = false;
-    }
-
-    fn ensure_line_index(&mut self) {
-        if self.dirty {
-            self.rebuild_line_index();
-        }
-    }
 
     /// Materialise all pieces into a contiguous byte vector.
     /// O(N bytes) — only called after mutations or for snapshot().
