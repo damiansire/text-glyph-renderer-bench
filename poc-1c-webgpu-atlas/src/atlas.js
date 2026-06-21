@@ -11,9 +11,10 @@
  * Key: GlyphId is a string `"${fontFamily}:${codepoint}:${sizePx}"`.
  *
  * All rasterization uses an OffscreenCanvas (CPU) and `GPUQueue.writeTexture()`.
- * On Apple Silicon (UMA), `writeTexture` maps to a memcpy into the texture's
- * Tile Adaptive Compressed layout — fast but still a copy (unlike Metal
- * `makeBuffer(bytesNoCopy:)` which avoids all copies).
+ * On Apple Silicon (UMA), `writeTexture` copies the bytes and re-tiles them into
+ * the texture's internal tiled/twiddled (Morton-order) layout. The atlas is
+ * `r8unorm` (uncompressed), so this is a copy + swizzle — NOT compression and
+ * NOT ASTC. It is still a copy, unlike Metal `makeBuffer(bytesNoCopy:)`.
  */
 
 'use strict';
