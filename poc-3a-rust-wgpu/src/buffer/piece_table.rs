@@ -179,6 +179,13 @@ impl PieceTable {
     ///
     /// O(P) where P = number of pieces.  For unedited files P = 1 → O(1).
     fn find_piece(&self, byte_offset: usize) -> (usize, usize) {
+        // Empty document (e.g. after deleting all content): there is no piece
+        // to point into, so report index 0 with offset 0. Callers treat an
+        // empty `pieces` as "insert into an empty buffer".
+        if self.pieces.is_empty() {
+            return (0, 0);
+        }
+
         let mut remaining = byte_offset;
         for (i, piece) in self.pieces.iter().enumerate() {
             if remaining <= piece.len {
