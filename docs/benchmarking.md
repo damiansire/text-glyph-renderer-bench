@@ -34,16 +34,20 @@ Measurements:
   - Peak VRAM: via MTLHeap or os_proc_available_memory()
 ```
 
-**Deterministic file generator:**
+**Deterministic file generator:** use the canonical script, not an inline
+snippet. The real generator builds a *mixed* corpus (English/Spanish prose,
+Unicode/emoji/CJK/RTL, source-code fragments, long and empty lines) with a
+fixed seed so the file is byte-for-byte reproducible:
+
 ```bash
-python3 -c "
-import random, string
-random.seed(42)
-lines = [''.join(random.choices(string.printable, k=80)) for _ in range(1_300_000)]
-open('test_100mb.txt','w').write('\n'.join(lines))
-"
-# ~100 MB, 1.3M lines, reproducible content
+python3 shared/test-data/generate_testfile.py            # → test_100mb.txt (100 MB)
+python3 shared/test-data/generate_testfile.py --size 10  # → test_10mb.txt  (10 MB)
+python3 shared/test-data/generate_testfile.py --verify    # check SHA-256 of the canonical corpus
 ```
+
+(An earlier inline `random.choices(string.printable, …)` one-liner was wrong:
+`string.printable` includes `\n`/`\r`, so it injects line breaks mid-"line" and
+the 1.3M-line count does not hold.)
 
 ### Instruments.app Integration
 
