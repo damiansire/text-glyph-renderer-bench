@@ -95,15 +95,29 @@ final class PieceTable: TextBuffer {
 
             let localStart = max(0, range.lowerBound - globalOffset)
             let localEnd   = min(piece.len, range.upperBound - globalOffset)
-            let ptr: UnsafeRawPointer
+            let count      = localEnd - localStart
+            let callerOffset = globalOffset + localStart
+
+            let shouldContinue: Bool
             switch piece.kind {
             case .original:
-                ptr = originalMmap.advanced(by: piece.start + localStart)
+                // The mmap is a stable, long-lived mapping: its base pointer
+                // does not move, so deriving a sub-pointer here is safe.
+                let ptr = originalMmap.advanced(by: piece.start + localStart)
+                let buf = UnsafeRawBufferPointer(start: ptr, count: count)
+                shouldContinue = body(buf, callerOffset)
             case .add:
-                ptr = addBuffer.withUnsafeBytes { $0.baseAddress! }.advanced(by: piece.start + localStart)
+                // `Data.withUnsafeBytes` only guarantees the pointer is valid
+                // *inside* the closure — `Data` may relocate its storage, so the
+                // base address must never escape. Invoke `body` within the
+                // closure, rebasing to this piece's sub-range.
+                let pieceStart = piece.start + localStart
+                shouldContinue = addBuffer.withUnsafeBytes { raw -> Bool in
+                    let sub = UnsafeRawBufferPointer(rebasing: raw[pieceStart ..< pieceStart + count])
+                    return body(sub, callerOffset)
+                }
             }
-            let buf = UnsafeRawBufferPointer(start: ptr, count: localEnd - localStart)
-            if !body(buf, globalOffset + localStart) { break }
+            if !shouldContinue { break }
             globalOffset = pieceEnd
         }
     }
