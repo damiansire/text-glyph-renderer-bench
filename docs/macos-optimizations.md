@@ -14,14 +14,20 @@ NVMe Disk ──DMA──► DRAM Pages ──UMA──► GPU L2 Cache
    accessible from both processors via Unified Memory.
 ```
 
-**Optimal mmap configuration:**
+**Optimal mmap configuration (macOS / Darwin):**
 ```c
-// MAP_PRIVATE: copy-on-write → mutations don't affect the file
-// MAP_POPULATE: pre-faulting → avoids page faults during render
-// MADV_SEQUENTIAL: TLB prefetcher optimized for linear reads
-void* ptr = mmap(NULL, size, PROT_READ,
-                 MAP_PRIVATE | MAP_POPULATE, fd, 0);
+// MAP_PRIVATE:     copy-on-write → mutations don't affect the file.
+// MADV_WILLNEED:   the macOS pre-fault — asks the kernel to fault pages in
+//                  ahead of use, so the first render doesn't stall.
+// MADV_SEQUENTIAL: tunes the *readahead* window for linear reads (this is
+//                  about readahead, not the TLB).
+void* ptr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
 madvise(ptr, size, MADV_SEQUENTIAL | MADV_WILLNEED);
+
+// NOTE: MAP_POPULATE is a *Linux-only* flag (pre-faults at mmap() time).
+// It does not exist on Darwin/macOS; do not rely on it here. On the Linux
+// benchmark host it can be added to the mmap() flags, where memmap2's
+// `.populate()` maps to it.
 ```
 
 ---

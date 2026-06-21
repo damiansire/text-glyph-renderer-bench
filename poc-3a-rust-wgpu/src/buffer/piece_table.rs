@@ -74,20 +74,26 @@ pub struct PieceTable {
 impl PieceTable {
     // ── Constructors ─────────────────────────────────────────────────────
 
-    /// Load a file by memory-mapping it.  On Apple Silicon the kernel maps
-    /// the file into the unified address space; the GPU can read the same
-    /// pages via `wgpu::Buffer` without a copy.
+    /// Load a file by memory-mapping it.
     ///
-    /// `MAP_POPULATE` pre-faults pages so the first render doesn't stall.
+    /// Pre-faulting note: `MmapOptions::populate()` maps to `MAP_POPULATE`,
+    /// which is a **Linux-only** flag (it is a no-op on Darwin/macOS, where
+    /// the kernel has no equivalent mmap flag). On macOS the pre-fault is done
+    /// instead by `madvise(MADV_WILLNEED)` plus the sequential line-index scan
+    /// below, which faults every page in on first touch. We keep `.populate()`
+    /// for the Linux benchmark host; it costs nothing elsewhere.
     pub fn from_file(path: &Path) -> io::Result<Self> {
         let file = File::open(path)?;
         let mmap = unsafe {
             MmapOptions::new()
-                .populate() // pre-fault pages — avoids stalls during first scroll
+                .populate() // pre-fault pages on Linux; no-op on macOS (see above).
                 .map(&file)?
         };
 
-        // Advise sequential access for the initial line-index scan
+        // Readahead hints for the initial line-index scan. These are distinct
+        // from TLB behaviour: `Sequential` tunes the readahead window, while
+        // `WillNeed` asks the kernel to start faulting the pages in (the macOS
+        // pre-fault path, since MAP_POPULATE does nothing there).
         #[cfg(unix)]
         {
             use memmap2::Advice;
