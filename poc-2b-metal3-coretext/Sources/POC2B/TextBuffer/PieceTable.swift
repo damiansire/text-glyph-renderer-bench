@@ -29,7 +29,7 @@ final class PieceTable: TextBuffer {
     }
     private var pieces: [Piece] = []
 
-    /// Byte offset of the start of each line (built by SIMD-like scan using vDSP).
+    /// Byte offset of the start of each line (built by a scalar byte scan for `\n`).
     private var lineOffsets: [Int] = []
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -150,7 +150,8 @@ final class PieceTable: TextBuffer {
         // the mmap directly using UInt8 comparison — faster than copying to Data.
         var offsets = [0]  // line 0 starts at byte 0
         if pieces.count == 1 && pieces[0].kind == .original {
-            // Direct mmap scan — mimics memchr on aarch64
+            // Direct scalar scan over the mmap for `\n` (0x0A), byte by byte.
+            // NOTE: not vectorized — no vDSP/SIMD/memchr here; see lineOffsets.
             let buf = UnsafeRawBufferPointer(start: originalMmap, count: originalLen)
             for (i, byte) in buf.enumerated() where byte == 0x0A {
                 offsets.append(i + 1)
