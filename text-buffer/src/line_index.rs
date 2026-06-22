@@ -1,15 +1,17 @@
 //! line_index.rs — SIMD-accelerated line start offset table.
 //!
-//! Uses `memchr::memchr_iter` which on aarch64 (Apple Silicon) compiles to
-//! NEON `vceqq_u8` + `vmaxvq_u8` vectorized scan — 16 bytes per cycle.
+//! Uses `memchr::memchr_iter` which on aarch64 (Apple Silicon) compiles to a
+//! NEON `vceqq_u8` + `vmaxvq_u8` vectorized scan that consumes 16 bytes per
+//! vector iteration (one 128-bit register), not 16 bytes per CPU cycle — actual
+//! throughput is bounded by load-port width and the `vmaxv` reduction.
 //!
 //! The result is a `Vec<u32>` of byte offsets for the start of each line:
 //!   index[0] = 0          (line 0 always starts at byte 0)
 //!   index[k] = offset of byte immediately after the (k-1)'th `\n`
 //!
-//! This table is built **once** during file load and never mutated during
-//! scroll.  After text mutations it is rebuilt by `PieceTable` before the
-//! next render frame that requires line information.
+//! This table is built **once** during file load and from then on **patched in
+//! place** on every edit (see `record_insert` / `record_delete`); it is never
+//! reconstructed from scratch.
 
 use memchr::memchr_iter;
 
@@ -51,7 +53,11 @@ impl LineIndex {
     ///
     /// Complexity: O(N / 16) with NEON vectorization on aarch64.
     ///
-    /// On a M-series chip scanning 100 MB: ~6.25 M cycles / ~2 ms at 3 GHz.
+    /// The ~2 ms-for-100 MB figure is a *compute-bound* ceiling assuming the
+    /// bytes are already resident in cache. `build()` runs right after the
+    /// `mmap` during file load, so in practice it pays the **cold** path:
+    /// page-faulting and reading 100 MB from disk/DRAM is memory-bound and costs
+    /// tens of ms — that dominates the wall time, not the scan itself.
     pub fn build(data: &[u8]) -> Self {
         // Pre-allocate: estimate 1 line per 45 bytes (reasonable for mixed text).
         let estimated = (data.len() / 45).max(64);
