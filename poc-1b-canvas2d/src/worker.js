@@ -6,7 +6,8 @@
  * OffscreenCanvas to this worker via `postMessage` with a Transferable.
  *
  * Responsibilities:
- *   1. Receive the OffscreenCanvas + the full lines array.
+ *   1. Receive the OffscreenCanvas + the raw corpus as a transferred
+ *      ArrayBuffer, then decode + split it into lines on this thread.
  *   2. On each `render` command, draw the visible slice of lines.
  *   3. Report frame timing back to the main thread via `postMessage`.
  *
@@ -42,10 +43,14 @@ self.onmessage = function (e) {
     const { type, data } = e.data;
 
     switch (type) {
-        // ── init: receive OffscreenCanvas + all lines ─────────────────────────
+        // ── init: receive OffscreenCanvas + raw corpus bytes ──────────────────
         case 'init': {
             canvas = data.canvas;   // transferred OffscreenCanvas
-            lines = data.lines;
+            // Decode the transferred ArrayBuffer and split into lines here, so
+            // the ~100 MB corpus crosses the thread boundary once as a
+            // Transferable instead of being structured-cloned as 1.3M strings.
+            const content = new TextDecoder('utf-8').decode(new Uint8Array(data.corpus));
+            lines = content.split('\n');
             lineH = data.lineHeight;
             ctx = canvas.getContext('2d', {
                 alpha: false,          // opaque — avoids alpha blending overhead

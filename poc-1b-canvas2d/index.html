@@ -176,12 +176,14 @@
             const content = chunks.join('');
             const load_ms = performance.now() - t_load;
 
-            loadStatus.textContent = 'Split de líneas…';
+            // Encode the raw corpus into a single ArrayBuffer so it can be
+            // *transferred* (zero-copy) to the worker, which splits it into lines
+            // there. This avoids structured-cloning ~1.3M strings across threads.
+            loadStatus.textContent = 'Codificando corpus…';
             await new Promise(r => setTimeout(r, 0));
             const t_split = performance.now();
-            const lines = content.split('\n');
+            const corpusBytes = new TextEncoder().encode(content);
             const split_ms = performance.now() - t_split;
-            ipcRenderer.send('log', `1B: ${lines.length} líneas en ${split_ms.toFixed(1)}ms`);
 
             // ── Spin up the OffscreenCanvas worker ──────────────────────────────────
             loadStatus.textContent = 'Iniciando Worker…';
@@ -189,16 +191,21 @@
             const offscreen = mainCanvas.transferControlToOffscreen();
             const worker = new Worker('./src/worker.js');
 
-            // Send canvas + lines to worker (canvas is a Transferable)
+            // Transfer canvas + raw corpus bytes (both Transferables). The worker
+            // decodes and splits into lines on its own thread.
             worker.postMessage({
                 type: 'init',
-                data: { canvas: offscreen, lines, lineHeight: LINE_H }
-            }, [offscreen]);
+                data: { canvas: offscreen, corpus: corpusBytes.buffer, lineHeight: LINE_H }
+            }, [offscreen, corpusBytes.buffer]);
 
-            // Wait for worker ready
+            // Wait for worker ready; it reports the line count it produced.
+            let lineCount = 0;
             await new Promise(resolve => {
-                worker.onmessage = (e) => { if (e.data.type === 'ready') resolve(); };
+                worker.onmessage = (e) => {
+                    if (e.data.type === 'ready') { lineCount = e.data.lineCount; resolve(); }
+                };
             });
+            ipcRenderer.send('log', `1B: ${lineCount} líneas en ${split_ms.toFixed(1)}ms`);
 
             overlay.style.display = 'none';
             hud.style.display = 'block';
@@ -237,7 +244,7 @@
             }
 
             // ── Benchmark mode ─────────────────────────────────────────────────────
-            const totalH = lines.length * LINE_H;
+            const totalH = lineCount * LINE_H;
             let frame = 0;
 
             function benchFrame() {
@@ -247,7 +254,7 @@
                     const p = pct => sorted[Math.floor(n * pct / 100)] || 0;
                     const result = {
                         poc_id: '1b-canvas2d',
-                        file: { line_count: lines.length, load_ms: +load_ms.toFixed(2), split_ms: +split_ms.toFixed(2) },
+                        file: { line_count: lineCount, load_ms: +load_ms.toFixed(2), split_ms: +split_ms.toFixed(2) },
                         benchmark: {
                             total_frames: n, dropped_frames: dropped,
                             drop_rate_pct: +(dropped / n * 100).toFixed(2),
