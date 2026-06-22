@@ -44,10 +44,20 @@ Piece Table:
 
 | Operation | Complexity | Condition |
 |-----------|------------|-----------|
-| Insert (append-only to Add buffer) | O(1) amortized | table grows O(K mutations) |
-| Delete | O(1) — piece split | no data movement |
-| Slice | O(log N) over piece table | N = number of pieces |
+| Insert (append-only to Add buffer) | O(P + L) | O(1) piece split; line-index patch is O(L) lines |
+| Delete | O(P + L) | piece split (no data movement); line-index patch is O(L) lines |
+| Slice | O(P) over piece table | flat `Vec<Piece>`; P = number of pieces |
 | Serialization | O(N_pieces × avg_size) | recombine pieces |
+
+> **Note on complexity.** The piece-split itself is O(1) (Insert) / O(1) (Delete),
+> but every edit also patches the line-index in place (`record_insert` /
+> `record_delete`), which shifts/splices offsets and is O(L) in the number of
+> lines — hence the O(P + L) above. Likewise, `Slice` is O(P) because the
+> implemented buffer is a **flat `Vec<Piece>`** scanned linearly (`find_piece`,
+> `slice_pieces`); the O(log N) cited for a *Piece Tree* (piece table backed by a
+> search tree over line offsets) is the recommended design, **not** what is built
+> here. The **line** index alone is O(log L) (`LineIndex::byte_to_line` uses
+> `binary_search`).
 
 **Critical strength for this benchmark:**
 - The original buffer **is the mmap directly**. `Piece.start` + `Piece.len` index mapped memory without any `memcpy`. This is **CPU-side** zero-copy text access.
