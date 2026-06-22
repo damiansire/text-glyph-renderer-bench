@@ -34,6 +34,7 @@ from pathlib import Path
 ROOT_DIR     = Path(__file__).parent.parent.parent  # monorepo root
 RESULTS_DIR  = ROOT_DIR / "results"
 TEST_FILE    = ROOT_DIR / "shared" / "test-data" / "test_100mb.txt"
+SCHEMA_FILE  = ROOT_DIR / "shared" / "metrics" / "frame_stats.schema.json"
 
 # ── PoC registry ─────────────────────────────────────────────────────────────
 
@@ -42,7 +43,8 @@ POCS = {
         "label": "PoC 1A — Web DOM (Electron)",
         "cwd":   ROOT_DIR / "poc-1a-web-dom",
         "cmd":   ["node", "benchmarks/synthetic_scroll.js", str(TEST_FILE)],
-        "result_file": RESULTS_DIR / "1a-web-dom-nodejs_stats.json",
+        # Audit P1/P2: single canonical artifact named after the schema poc_id.
+        "result_file": RESULTS_DIR / "1a-web-dom_stats.json",
         "category": "Web",
     },
     "1b": {
@@ -65,6 +67,10 @@ POCS = {
         "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1d-webgpu-msdf_stats.json",
         "category": "Web",
+        # Audit P4: 1D has no index.html and no charset; it never renders nor
+        # emits stats. Marked not-implemented so the orchestrator skips it
+        # instead of reporting a spurious "result file not found".
+        "not_implemented": "missing index.html + MSDF charset (see README)",
     },
     "2a": {
         "label": "PoC 2A — TextKit 2 (Swift)",
@@ -106,11 +112,23 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
     print(f"\n{'='*60}")
     print(f"Running {info['label']}...")
     print(f"{'='*60}")
+
+    # Audit P4: skip PoCs explicitly declared not-implemented instead of
+    # running them and reporting a spurious "result file not found".
+    if info.get("not_implemented"):
+        print(f"  SKIPPED: not implemented — {info['not_implemented']}")
+        return None
+
     t0 = time.monotonic()
     try:
-        # Avoid Electron environment contamination
+        # Avoid Electron environment contamination.
         env = os.environ.copy()
         env.pop("ELECTRON_RUN_AS_NODE", None)
+        # Audit P1: every PoC writes its *_stats.json into ONE canonical
+        # directory (absolute ROOT/results), regardless of its own cwd. Each
+        # PoC reads BENCH_RESULTS_DIR; without this the Web PoCs wrote into
+        # poc-X/results (relative to their cwd) and the runner never found them.
+        env["BENCH_RESULTS_DIR"] = str(RESULTS_DIR)
 
         result = subprocess.run(
             info["cmd"],
@@ -123,11 +141,17 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
         elapsed = time.monotonic() - t0
         print(f"  Completed in {elapsed:.1f}s")
 
-        # Read result JSON
+        # Read result JSON.
         result_file = info["result_file"]
         if result_file.exists():
             with open(result_file) as f:
-                return json.load(f)
+                data = json.load(f)
+            # Audit P2: validate against the executable data contract. A PoC
+            # that emits a non-conforming report is a hard failure of the
+            # comparison, not a silent pass.
+            if not validate_report(poc_id, data, result_file):
+                return None
+            return data
         else:
             print(f"  WARNING: result file not found: {result_file}")
             return None
@@ -142,14 +166,126 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
         return None
 
 
+# ── Schema validation (audit P2) ─────────────────────────────────────────────
+
+_SCHEMA_CACHE: dict | None = None
+
+
+def _load_schema() -> dict | None:
+    """Load and cache the BenchmarkReport JSON schema. Returns None if the
+    `jsonschema` package or the schema file is unavailable (validation is then
+    skipped with a warning rather than blocking the run)."""
+    global _SCHEMA_CACHE
+    if _SCHEMA_CACHE is not None:
+        return _SCHEMA_CACHE
+    if not SCHEMA_FILE.exists():
+        print(f"  WARNING: schema not found at {SCHEMA_FILE}; skipping validation")
+        return None
+    with open(SCHEMA_FILE) as f:
+        _SCHEMA_CACHE = json.load(f)
+    return _SCHEMA_CACHE
+
+
+def validate_report(poc_id: str, data: dict, src: Path) -> bool:
+    """Validate a PoC's *_stats.json against frame_stats.schema.json and check
+    that its poc_id is the expected one. Returns True if valid (or if the
+    validator is unavailable)."""
+    try:
+        import jsonschema
+    except ImportError:
+        print("  WARNING: `jsonschema` not installed; skipping schema validation"
+              " (pip install jsonschema)")
+        return True
+
+    schema = _load_schema()
+    if schema is None:
+        return True
+
+    try:
+        jsonschema.validate(instance=data, schema=schema)
+    except jsonschema.ValidationError as e:
+        print(f"  SCHEMA ERROR in {src.name}: {e.message}")
+        return False
+
+    # The enum check above guarantees poc_id is one of the 8 valid ids; also
+    # assert it is the one we expected for this slot.
+    if data.get("poc_id") != poc_id_to_schema_id(poc_id):
+        print(f"  SCHEMA ERROR in {src.name}: poc_id "
+              f"{data.get('poc_id')!r} != expected "
+              f"{poc_id_to_schema_id(poc_id)!r}")
+        return False
+    return True
+
+
+def poc_id_to_schema_id(poc_id: str) -> str:
+    """Map the runner's short key (e.g. '1a') to the schema enum id
+    (e.g. '1a-web-dom')."""
+    folder = POCS[poc_id]["cwd"].name
+    # cwd folder is e.g. "poc-1a-web-dom"; the schema id strips the "poc-" prefix.
+    # For 3a/3b the cwd is ROOT, so fall back to a static table.
+    static = {
+        "3a": "3a-rust-wgpu",
+        "3b": "3b-rust-vello",
+    }
+    if poc_id in static:
+        return static[poc_id]
+    return folder[len("poc-"):] if folder.startswith("poc-") else folder
+
+
 def extract_metrics(poc_id: str, data: dict) -> dict:
-    """Extract comparable metrics from any PoC result JSON."""
+    """Extract comparable metrics from any PoC result JSON.
+
+    Audit P1/P6: PoCs emit two distinct shapes. End-to-end PoCs (1a/1b/1c)
+    emit a `benchmark` block with percentiles already in ms. The Rust
+    microbenchmarks (3a/3b) deliberately do NOT report a frame-budget verdict;
+    they emit microbench blocks in µs (3a: `line_index_traversal`, 3b:
+    `scene_build`). We normalise both into the same row, converting µs→ms, and
+    leave drop_rate as 'n/a' for the microbenchmarks so the table never implies
+    a frame-budget comparison they did not measure.
+    """
+    label    = POCS[poc_id]["label"]
+    category = POCS[poc_id]["category"]
+
+    def us_to_ms(v):
+        return round(v / 1000.0, 3) if isinstance(v, (int, float)) else "?"
+
+    # ── Rust microbenchmarks: µs blocks, no frame-budget verdict ──────────
+    if "line_index_traversal" in data:  # 3a
+        mb = data["line_index_traversal"]
+        return {
+            "poc_id": poc_id, "label": label, "category": category,
+            "line_count": data.get("file_lines", "?"),
+            "load_ms": data.get("load_ms", "?"),
+            "total_frames": mb.get("total_iters", "?"),
+            "dropped_frames": "n/a", "drop_rate_pct": "n/a",
+            "p50_ms": us_to_ms(mb.get("p50_us")),
+            "p95_ms": us_to_ms(mb.get("p95_us")),
+            "p99_ms": us_to_ms(mb.get("p99_us")),
+            "budget_ms": 8.333,
+        }
+    if "scene_build" in data:  # 3b
+        mb = data["scene_build"]
+        file_info = data.get("file", {})
+        return {
+            "poc_id": poc_id, "label": label, "category": category,
+            "line_count": file_info.get("line_count", "?"),
+            "load_ms": file_info.get("load_ms", "?"),
+            "total_frames": mb.get("total_iters", "?"),
+            "dropped_frames": "n/a", "drop_rate_pct": "n/a",
+            # 3b already exposes p*_ms numbers alongside the µs values.
+            "p50_ms": mb.get("p50_ms", us_to_ms(mb.get("p50_us"))),
+            "p95_ms": mb.get("p95_ms", us_to_ms(mb.get("p95_us"))),
+            "p99_ms": mb.get("p99_ms", us_to_ms(mb.get("p99_us"))),
+            "budget_ms": 8.333,
+        }
+
+    # ── End-to-end PoCs: `benchmark` block, percentiles already in ms ─────
     bench = data.get("benchmark", {})
     file_info = data.get("file", {})
     return {
         "poc_id":          poc_id,
-        "label":           POCS[poc_id]["label"],
-        "category":        POCS[poc_id]["category"],
+        "label":           label,
+        "category":        category,
         "line_count":      file_info.get("line_count", "?"),
         "load_ms":         file_info.get("load_ms", "?"),
         "total_frames":    bench.get("total_frames", "?"),

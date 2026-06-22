@@ -86,12 +86,19 @@ function createWindow() {
 
 // ── IPC: receive benchmark results from renderer ──────────────────────────────
 
-ipcMain.on('benchmark-complete', (_event, stats) => {
+ipcMain.on('benchmark-complete', (event, stats) => {
+    // Audit P10: only accept results from our own renderer frame.
+    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) return;
+    if (!stats || typeof stats !== 'object' || typeof stats.poc_id !== 'string') {
+        process.stderr.write('[renderer] ignoring malformed benchmark stats\n');
+        return;
+    }
     console.log('\n=== PoC 1A Benchmark Results ===');
     console.log(JSON.stringify(stats, null, 2));
 
-    // Write results to shared results directory
-    const outDir = path.join(__dirname, '..', 'results');
+    // Audit P1: write to ROOT/results (BENCH_RESULTS_DIR) so the orchestrator
+    // finds it; fall back to the shared results directory for standalone runs.
+    const outDir = process.env.BENCH_RESULTS_DIR || path.join(__dirname, '..', 'results');
     fs.mkdirSync(outDir, { recursive: true });
     const outFile = path.join(outDir, '1a-web-dom_stats.json');
     fs.writeFileSync(outFile, JSON.stringify(stats, null, 2));

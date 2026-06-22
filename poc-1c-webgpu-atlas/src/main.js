@@ -50,9 +50,16 @@ app.whenReady().then(() => {
     win.loadURL(`file://${path.join(__dirname, '..', 'index.html')}?${p}`);
 });
 
-ipcMain.on('benchmark-complete', (_e, stats) => {
+ipcMain.on('benchmark-complete', (e, stats) => {
+    // Audit P10: only accept results from our own renderer frame.
+    if (e.senderFrame && e.senderFrame !== e.sender.mainFrame) return;
+    if (!stats || typeof stats !== 'object' || typeof stats.poc_id !== 'string') {
+        process.stderr.write('[1C] ignoring malformed benchmark stats\n');
+        return;
+    }
     console.log(JSON.stringify(stats, null, 2));
-    const dir = path.join(__dirname, '..', 'results');
+    // Audit P1: write to ROOT/results (BENCH_RESULTS_DIR) when set.
+    const dir = process.env.BENCH_RESULTS_DIR || path.join(__dirname, '..', 'results');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, '1c-webgpu-atlas_stats.json'), JSON.stringify(stats, null, 2));
     if (cli.benchmark) setTimeout(() => app.quit(), 500);

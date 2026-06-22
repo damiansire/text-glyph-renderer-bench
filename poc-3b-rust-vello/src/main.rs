@@ -230,9 +230,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    std::fs::create_dir_all("results")?;
-    let out = "results/3b-rust-vello_stats.json";
-    std::fs::write(out, serde_json::to_string_pretty(&result)?)?;
+    // Audit P1: write into the directory the orchestrator points us at
+    // (BENCH_RESULTS_DIR = absolute ROOT/results); fall back to a local
+    // `results/` for standalone runs.
+    let out_dir = std::env::var("BENCH_RESULTS_DIR").unwrap_or_else(|_| "results".to_string());
+    std::fs::create_dir_all(&out_dir)?;
+    let out = format!("{out_dir}/3b-rust-vello_stats.json");
+    std::fs::write(&out, serde_json::to_string_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     println!("\nResults → {}", out);
 

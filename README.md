@@ -17,7 +17,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design.
 | `poc-1a-web-dom` | Electron + DOM | Web Sandboxed | — |
 | `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed | — |
 | `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | — |
-| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed | — |
+| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed | **not implemented** — missing `index.html` + MSDF charset; never renders nor emits stats. Skipped by the benchmark runner. |
 | `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | — |
 | `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | — |
 | `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | buffer/line-index only (no GPU render yet) |
@@ -61,4 +61,18 @@ npm run benchmark
 
 ## Metrics Structure
 
-Each PoC exports a `results/<poc-id>_stats.json` file following the schema defined in `shared/metrics/frame_stats.schema.json`.
+Each implemented PoC writes an **aggregated** `results/<poc-id>_stats.json`
+report — one object per run, not one record per frame — that conforms to the
+`BenchmarkReport` schema in `shared/metrics/frame_stats.schema.json`. The schema
+requires a `poc_id` from a closed enum of the 8 stacks and validates the
+`benchmark` block (percentiles as numbers, in ms).
+
+`shared/metrics/benchmark_runner.py` validates every `*_stats.json` against that
+schema as it aggregates them: a non-conforming report is a hard failure, not a
+silent pass. All PoCs write into a single canonical directory (`results/`),
+which the runner passes to each via the `BENCH_RESULTS_DIR` environment variable.
+
+The Rust PoCs (3A/3B) are microbenchmarks that deliberately do **not** report a
+frame-budget verdict (they measure line-index traversal / CPU scene build only);
+their rows show `n/a` for the drop rate so the table never implies a comparison
+they did not measure.

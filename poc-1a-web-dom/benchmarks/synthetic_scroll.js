@@ -78,28 +78,41 @@ if (typeof window === 'undefined') {
 
     frameTimes_ns.sort((a, b) => a - b);
     const n = frameTimes_ns.length;
-    const p = (pct) => frameTimes_ns[Math.floor(n * pct / 100)] / 1e6;
+    // Guard n==0 and clamp the index so a tiny/empty sample does not produce
+    // `undefined`. Returns a NUMBER in ms (audit P6: no strings via toFixed).
+    const round3 = (x) => Math.round(x * 1000) / 1000;
+    const p = (pct) =>
+        n === 0 ? 0 : round3(frameTimes_ns[Math.min(Math.floor(n * pct / 100), n - 1)] / 1e6);
 
     const result = {
-        poc_id: '1a-web-dom-nodejs',
+        // Audit P2: poc_id must be a value of the closed enum in
+        // frame_stats.schema.json. The Node-only baseline reports under the
+        // canonical '1a-web-dom' id (the "no DOM" caveat lives in `meta`).
+        poc_id: '1a-web-dom',
         meta: { note: 'Node.js only — no DOM, no Electron' },
         file: { line_count: lines.length, load_ms, split_ms },
         benchmark: {
             total_frames: n,
             dropped_frames: dropped,
-            drop_rate_pct: (dropped / n * 100).toFixed(2),
-            p50_ms: p(50).toFixed(3),
-            p95_ms: p(95).toFixed(3),
-            p99_ms: p(99).toFixed(3),
+            // Audit P6: emit NUMBERS (not strings) so every PoC is comparable
+            // and benchmark_runner.py formats them uniformly.
+            drop_rate_pct: n === 0 ? 0 : round3(dropped / n * 100),
+            p50_ms: p(50),
+            p95_ms: p(95),
+            p99_ms: p(99),
             budget_ms: FRAME_BUDGET_US / 1000,
         },
     };
 
     console.log(JSON.stringify(result, null, 2));
 
-    const outDir = 'results';
+    // Audit P1: write to the directory the orchestrator points us at
+    // (BENCH_RESULTS_DIR = absolute ROOT/results), falling back to a local
+    // `results/` for standalone runs. The canonical filename matches the
+    // runner's `result_file` for 1A.
+    const outDir = process.env.BENCH_RESULTS_DIR || 'results';
     fs.mkdirSync(outDir, { recursive: true });
-    const outFile = `${outDir}/1a-web-dom-nodejs_stats.json`;
+    const outFile = path.join(outDir, '1a-web-dom_stats.json');
     fs.writeFileSync(outFile, JSON.stringify(result, null, 2));
     console.log(`\nResults → ${outFile}`);
 

@@ -1,19 +1,15 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "FrameStats",
-    "description": "Métricas de rendimiento por frame exportadas por cada PoC",
+    "title": "BenchmarkReport",
+    "description": "Reporte AGREGADO que cada PoC escribe en results/<poc-id>_stats.json. Refleja lo que los PoCs realmente emiten: un objeto por corrida (no un registro por frame). Algunos PoCs (3a/3b) son microbenchmarks que a propósito NO reportan veredicto de frame-budget; por eso `benchmark` es opcional y se admiten bloques de microbench alternativos.",
     "type": "object",
     "required": [
-        "poc_id",
-        "timestamp_ms",
-        "frame_index",
-        "cpu_encode_ns",
-        "gpu_render_ns"
+        "poc_id"
     ],
     "properties": {
         "poc_id": {
             "type": "string",
-            "description": "Identificador del PoC (e.g. '1a-web-dom', '2b-metal3-coretext')",
+            "description": "Identificador del PoC. Debe ser uno de los 8 stacks comparados.",
             "enum": [
                 "1a-web-dom",
                 "1b-canvas2d",
@@ -25,57 +21,48 @@
                 "3b-rust-vello"
             ]
         },
-        "timestamp_ms": {
-            "type": "number",
-            "description": "DOMHighResTimeStamp o mach_absolute_time convertido a ms desde inicio del benchmark"
+        "measures": {
+            "type": "string",
+            "description": "Qué mide la corrida cuando NO es un frame end-to-end (p.ej. 3a/3b microbench)."
         },
-        "frame_index": {
-            "type": "integer",
-            "description": "Número de frame desde inicio del benchmark (0-based)"
+        "meta": {
+            "type": "object",
+            "description": "Metadatos de plataforma / nota libre.",
+            "additionalProperties": true
         },
-        "cpu_encode_ns": {
-            "type": "integer",
-            "description": "Tiempo de CPU para construir el command buffer / draw calls (nanosegundos)"
+        "file": {
+            "type": "object",
+            "description": "Métricas de carga del corpus.",
+            "properties": {
+                "line_count": { "type": "integer", "minimum": 0 },
+                "load_ms": { "type": "number", "minimum": 0 },
+                "split_ms": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": true
         },
-        "gpu_render_ns": {
-            "type": "integer",
-            "description": "Tiempo de GPU para ejecutar el render pass (nanosegundos). 0 si no disponible."
+        "benchmark": {
+            "type": "object",
+            "description": "Resultado end-to-end contra el presupuesto de 8.33 ms (PoCs que sí renderizan un frame). Los percentiles son NÚMEROS en ms (no strings).",
+            "properties": {
+                "total_frames": { "type": "integer", "minimum": 0 },
+                "dropped_frames": { "type": "integer", "minimum": 0 },
+                "drop_rate_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+                "p50_ms": { "type": "number", "minimum": 0 },
+                "p95_ms": { "type": "number", "minimum": 0 },
+                "p99_ms": { "type": "number", "minimum": 0 },
+                "budget_ms": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": true
         },
-        "key_to_pixel_ns": {
-            "type": "integer",
-            "description": "Latencia Key-to-Pixel: desde evento de input hasta presentación del frame (nanosegundos)"
-        },
-        "atlas_hit_rate": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Proporción de glifos servidos desde el caché del atlas (0.0–1.0)"
-        },
-        "atlas_fill_ratio": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Porcentaje de ocupación del atlas de texturas (0.0–1.0)"
-        },
-        "glyphs_rendered": {
-            "type": "integer",
-            "description": "Número total de glifos renderizados en este frame"
-        },
-        "lines_visible": {
-            "type": "integer",
-            "description": "Número de líneas de texto visibles en el viewport"
-        },
-        "scroll_offset_px": {
-            "type": "number",
-            "description": "Offset de scroll actual en píxeles lógicos"
-        },
-        "dropped_frame": {
-            "type": "boolean",
-            "description": "true si el frame no llegó al vblank (> 8.33ms a 120Hz)"
-        },
-        "frame_time_ms": {
-            "type": "number",
-            "description": "Tiempo total del frame en ms (wall clock)"
+        "atlas": {
+            "type": "object",
+            "description": "Estadísticas opcionales del atlas de glifos.",
+            "properties": {
+                "hit_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+                "fill_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": true
         }
-    }
+    },
+    "additionalProperties": true
 }

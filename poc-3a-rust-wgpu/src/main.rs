@@ -237,9 +237,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let out_path = "results/3a-rust-wgpu_stats.json";
-    std::fs::create_dir_all("results")?;
-    std::fs::write(out_path, serde_json::to_string_pretty(&result)?)?;
+    // Audit P1: write into the directory the orchestrator points us at
+    // (BENCH_RESULTS_DIR = absolute ROOT/results); fall back to a local
+    // `results/` for standalone runs.
+    let out_dir = std::env::var("BENCH_RESULTS_DIR").unwrap_or_else(|_| "results".to_string());
+    std::fs::create_dir_all(&out_dir)?;
+    let out_path = format!("{out_dir}/3a-rust-wgpu_stats.json");
+    std::fs::write(&out_path, serde_json::to_string_pretty(&result)?)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     println!("\nResults written to {}", out_path);
 
