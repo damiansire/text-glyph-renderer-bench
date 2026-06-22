@@ -1,8 +1,10 @@
 //! main.rs — PoC 3B entry point: Rust + Vello (Compute Shader renderer)
 //!
 //! Architecture:
-//!   TextBuffer = shared PieceTable (from poc-3a-rust-wgpu, re-implemented here
-//!   for standalone operation — in the workspace it could be a shared crate).
+//!   TextBuffer = shared `PieceTable` from the `text-buffer` crate, re-exported
+//!   by this crate's `lib.rs`. 3A and 3B consume the exact same buffer
+//!   implementation and differ only in their renderer (it is NOT re-implemented
+//!   here).
 //!
 //!   Renderer = Vello's `vello::Renderer` backed by wgpu Metal (Apple Silicon).
 //!   No texture atlas; curves go to GPU as geometry, Compute Shaders evaluate
