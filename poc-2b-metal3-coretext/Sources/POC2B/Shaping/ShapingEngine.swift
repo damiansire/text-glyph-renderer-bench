@@ -44,6 +44,15 @@ final class ShapingEngine {
     /// Callback invoked on main thread when a fallback glyph is ready.
     var onFallbackReady: ((Int) -> Void)?  // lineIdx
 
+    /// AUDIT FIX (P3): lines with a fallback task currently in flight.
+    /// Prevents re-enqueueing a fallback while one is already live for the line.
+    private var fallbackInFlight: Set<Int> = []
+
+    /// AUDIT FIX (P3): lines whose .notdef could not be resolved by fallback.
+    /// These reach a stable cached state (notdef included) and are never
+    /// re-enqueued, so steady-state measurement is not flooded with re-shaping.
+    private var fallbackFailed: Set<Int> = []
+
     init(fontName: String = "JetBrains Mono", size: CGFloat = 13) {
         let descriptor = CTFontDescriptorCreateWithNameAndSize(fontName as CFString, size)
         primaryFont = CTFontCreateWithFontDescriptor(descriptor, size, nil)
@@ -124,21 +133,42 @@ final class ShapingEngine {
     // ── Font fallback (async) ─────────────────────────────────────────────────
 
     private func checkFallback(runs: [GlyphRun], lineIdx: Int) {
+        // AUDIT FIX (P3): never re-enqueue a fallback for a line that already
+        // has a task in flight or has permanently failed to resolve. Without
+        // this guard, any unresolved .notdef makes the line re-shape every
+        // frame (cache nil -> full re-shape -> same notdef -> re-enqueue),
+        // flooding .utility tasks and ruining steady-state measurement.
+        guard !fallbackInFlight.contains(lineIdx),
+              !fallbackFailed.contains(lineIdx) else { return }
+
         for run in runs {
             for glyph in run.glyphIDs where glyph == 0 {
-                // notdef glyph: schedule fallback lookup on utility queue
+                // notdef glyph: schedule fallback lookup on utility queue.
+                fallbackInFlight.insert(lineIdx)
                 fallbackQueue.async { [weak self] in
                     guard let self = self else { return }
-                    // In a real impl: CTFontCreateForString to find the fallback font
-                    // then re-shape and call the callback.
-                    // For the PoC we simulate the async work:
-                    Thread.sleep(forTimeInterval: 0.001) // simulate lookup
+                    // In a real impl: CTFontCreateForString to find the fallback
+                    // font, then re-shape and detect whether the fallback font
+                    // actually produced glyphs != 0.
+                    // For the PoC we simulate the async work; the simulation
+                    // cannot resolve the notdef, so `resolved` is always false.
+                    Thread.sleep(forTimeInterval: 0.001) // simulate lookup.
+                    let resolved = false
                     DispatchQueue.main.async {
-                        self.shapingCache.removeValue(forKey: lineIdx) // invalidate
-                        self.onFallbackReady?(lineIdx)
+                        self.fallbackInFlight.remove(lineIdx)
+                        if resolved {
+                            // Only invalidate when a DIFFERENT font yielded
+                            // glyphs != 0; otherwise we'd loop forever.
+                            self.shapingCache.removeValue(forKey: lineIdx)
+                            self.onFallbackReady?(lineIdx)
+                        } else {
+                            // Unresolvable notdef: keep the cached shaping (with
+                            // the notdef) and never reschedule for this line.
+                            self.fallbackFailed.insert(lineIdx)
+                        }
                     }
                 }
-                return  // only one fallback request per line
+                return  // only one fallback request per line.
             }
         }
     }

@@ -216,19 +216,22 @@ final class MetalRenderer: NSObject, MTKViewDelegate {
                     let u1 = u0 + Float(slot.width)  * atlasInv
                     let v1 = v0 + Float(slot.height) * atlasInv
 
-                    // 6 vertices: 2 triangles (TL,TR,BL, TR,BR,BL)
-                    let quad: [(Float, Float, Float, Float)] = [
-                        (x0,y0,u0,v0), (x1,y0,u1,v0), (x0,y1,u0,v1),
-                        (x1,y0,u1,v0), (x1,y1,u1,v1), (x0,y1,u0,v1),
-                    ]
-                    for (qx, qy, qu, qv) in quad {
-                        let base = vertexCount * (VERTEX_STRIDE / 4)
+                    // 6 vertices: 2 triangles (TL,TR,BL, TR,BR,BL).
+                    // AUDIT FIX (P7): write each vertex directly to vertexPtr
+                    // with static offsets, avoiding the per-glyph Swift Array of
+                    // 6 tuples (millions of ARC allocs/sec on the hot path).
+                    let floatsPerVertex = VERTEX_STRIDE / 4
+                    @inline(__always)
+                    func emit(_ qx: Float, _ qy: Float, _ qu: Float, _ qv: Float) {
+                        let base = vertexCount * floatsPerVertex
                         vertPtr[base+0] = qx; vertPtr[base+1] = qy
                         vertPtr[base+2] = qu; vertPtr[base+3] = qv
                         vertPtr[base+4] = textColor.x; vertPtr[base+5] = textColor.y
                         vertPtr[base+6] = textColor.z; vertPtr[base+7] = textColor.w
                         vertexCount += 1
                     }
+                    emit(x0,y0,u0,v0); emit(x1,y0,u1,v0); emit(x0,y1,u0,v1)
+                    emit(x1,y0,u1,v0); emit(x1,y1,u1,v1); emit(x0,y1,u0,v1)
                     cursorX += Float(run.advances[i].width)
                 }
             }

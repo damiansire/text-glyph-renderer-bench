@@ -31,6 +31,13 @@ final class TextureAtlasSwift {
     private(set) var hitCount:  Int = 0
     private(set) var missCount: Int = 0
 
+    /// AUDIT FIX (P9): number of times the atlas was full and had to clear and
+    /// rebuild, discarding the whole cache mid-measurement. The proper fix is a
+    /// multi-texture (paged) atlas; until that lands, this counter lets the
+    /// measurement harness detect and discard runs where a reset occurred so a
+    /// reset does not silently corrupt steady-state numbers. See `allocate`.
+    private(set) var resetCount: Int = 0
+
     var hitRate: Float { missCount == 0 ? 1 : Float(hitCount) / Float(hitCount + missCount) }
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -124,7 +131,13 @@ final class TextureAtlasSwift {
             }
         }
         if nextShelfY + h > size {
-            // Full: clear and rebuild (simplified; production would use free-list)
+            // Full: clear and rebuild (simplified; production would use free-list).
+            // AUDIT NOTE (P9): the correct fix is a multi-texture (paged) atlas;
+            // that requires new infrastructure across the renderer (bindless
+            // argument buffer + shader UV/texture indexing) that cannot be
+            // verified without compiling Metal, so it is DEFERRED. We at least
+            // record the reset so a mid-measurement cache wipe is observable.
+            resetCount += 1
             shelves = []; nextShelfY = 0; cache = [:]
             return allocate(w: w, h: h)
         }
