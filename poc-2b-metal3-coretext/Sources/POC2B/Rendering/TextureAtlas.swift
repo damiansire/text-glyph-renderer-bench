@@ -38,6 +38,15 @@ final class TextureAtlasSwift {
     /// reset does not silently corrupt steady-state numbers. See `allocate`.
     private(set) var resetCount: Int = 0
 
+    /// Number of atlas textures (pages) currently in use. Hoy es siempre `1`:
+    /// el atlas usa una sola textura y, al llenarse, hace clear-and-rebuild
+    /// (ver `allocate`). Cuando se implemente el atlas paginado este getter
+    /// pasara a `pages.count`. Se expone ya para que el harness de medicion
+    /// pueda registrar/asertar el numero de paginas de un run.
+    /// Plan completo de paginado: `docs/atlas-paging-plan.md` (P9).
+    /// NO VERIFICADO: requiere toolchain Metal (macOS) para compilar.
+    var pageCount: Int { 1 }
+
     var hitRate: Float { missCount == 0 ? 1 : Float(hitCount) / Float(hitCount + missCount) }
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -135,8 +144,12 @@ final class TextureAtlasSwift {
             // AUDIT NOTE (P9): the correct fix is a multi-texture (paged) atlas;
             // that requires new infrastructure across the renderer (bindless
             // argument buffer + shader UV/texture indexing) that cannot be
-            // verified without compiling Metal, so it is DEFERRED. We at least
-            // record the reset so a mid-measurement cache wipe is observable.
+            // verified without compiling Metal, so it is DEFERRED.
+            // TODO(P9): reemplazar este clear-and-rebuild por "abrir una pagina
+            // nueva y seguir" (sin tocar el cache existente). Plan detallado y
+            // cambios necesarios en el renderer: docs/atlas-paging-plan.md.
+            // Mientras tanto registramos el reset para que el harness descarte
+            // los runs en los que ocurre un wipe de cache a mitad de medicion.
             resetCount += 1
             shelves = []; nextShelfY = 0; cache = [:]
             return allocate(w: w, h: h)
