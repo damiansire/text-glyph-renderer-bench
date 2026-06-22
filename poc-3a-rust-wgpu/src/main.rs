@@ -37,14 +37,28 @@ impl Args {
         let mut scroll_px = 60.0_f64;
         let mut line_h = 20.0_f64;
 
+        // Small helper so a missing or malformed value for a flag prints a
+        // clear diagnostic and exits cleanly instead of panicking with a
+        // backtrace (audit P5: args inválidos daban backtrace).
+        fn parse_value<T: std::str::FromStr>(flag: &str, raw: Option<String>) -> T {
+            let raw = raw.unwrap_or_else(|| {
+                eprintln!("error: {flag} requires a value");
+                std::process::exit(2);
+            });
+            raw.parse().unwrap_or_else(|_| {
+                eprintln!("error: invalid value '{raw}' for {flag}");
+                std::process::exit(2);
+            })
+        }
+
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--file" => file = args.next().map(PathBuf::from),
                 "--bench" => bench = true,
-                "--frames" => scroll_frames = args.next().unwrap().parse().unwrap(),
-                "--scroll-px" => scroll_px = args.next().unwrap().parse().unwrap(),
-                "--line-height" => line_h = args.next().unwrap().parse().unwrap(),
+                "--frames" => scroll_frames = parse_value("--frames", args.next()),
+                "--scroll-px" => scroll_px = parse_value("--scroll-px", args.next()),
+                "--line-height" => line_h = parse_value("--line-height", args.next()),
                 _ => {}
             }
         }
@@ -127,12 +141,27 @@ fn run_traversal_microbench(pt: &mut PieceTable, args: &Args) -> TraversalStats 
     }
 
     // ── Percentiles ────────────────────────────────────────────────────
+    // Guard the empty case (`--frames 0`): an empty `iter_times_us` would make
+    // the percentile indexing panic and `avg_lines` divide by zero (audit P5).
     iter_times_us.sort_unstable();
     let n = iter_times_us.len();
-    let p50 = iter_times_us[n * 50 / 100];
-    let p95 = iter_times_us[n * 95 / 100];
-    let p99 = iter_times_us[n * 99 / 100];
-    let avg_lines = total_lines_visited as f64 / args.scroll_frames as f64;
+    let pct = |p: usize| {
+        if n == 0 {
+            0
+        } else {
+            // Clamp the index to the last element so p99 of a tiny sample is
+            // in-bounds.
+            iter_times_us[(n * p / 100).min(n - 1)]
+        }
+    };
+    let p50 = pct(50);
+    let p95 = pct(95);
+    let p99 = pct(99);
+    let avg_lines = if args.scroll_frames == 0 {
+        0.0
+    } else {
+        total_lines_visited as f64 / args.scroll_frames as f64
+    };
 
     TraversalStats {
         total_iters: args.scroll_frames,
@@ -165,15 +194,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if !args.bench {
-        // Just print stats and exit
+        // Just print stats and exit. Use `saturating_sub(1)` so an empty file
+        // (line_count/byte_len == 0) does not underflow `usize` (audit P5).
         println!("\nLine 0   start byte: {}", pt.line_start_byte(0));
         println!(
             "Line 100 start byte: {}",
-            pt.line_start_byte(100.min(pt.line_count() - 1))
+            pt.line_start_byte(100.min(pt.line_count().saturating_sub(1)))
         );
         println!(
             "Byte 4096 → line {}",
-            pt.byte_to_line(4096.min(pt.byte_len() - 1))
+            pt.byte_to_line(4096.min(pt.byte_len().saturating_sub(1)))
         );
         println!("\nDone. Run with --bench for scroll benchmark.");
         return Ok(());

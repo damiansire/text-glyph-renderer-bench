@@ -42,16 +42,32 @@ impl Args {
             line_height: 20.0,
             headless: false,
         };
+        // Helper: a missing/malformed flag value prints a clear error and
+        // exits instead of panicking with a backtrace (audit P5).
+        fn value(flag: &str, raw: Option<String>) -> String {
+            raw.unwrap_or_else(|| {
+                eprintln!("error: {flag} requires a value");
+                std::process::exit(2);
+            })
+        }
+        fn parse_value<T: std::str::FromStr>(flag: &str, raw: Option<String>) -> T {
+            let raw = value(flag, raw);
+            raw.parse().unwrap_or_else(|_| {
+                eprintln!("error: invalid value '{raw}' for {flag}");
+                std::process::exit(2);
+            })
+        }
+
         let mut argv = std::env::args().skip(1);
         while let Some(a) = argv.next() {
             match a.as_str() {
-                "--file" => args.file = argv.next().unwrap().into(),
-                "--font" => args.font = argv.next().unwrap().into(),
+                "--file" => args.file = value("--file", argv.next()).into(),
+                "--font" => args.font = value("--font", argv.next()).into(),
                 "--bench" => args.bench = true,
                 "--headless" => args.headless = true,
-                "--frames" => args.scroll_frames = argv.next().unwrap().parse().unwrap(),
-                "--scroll-px" => args.scroll_px = argv.next().unwrap().parse().unwrap(),
-                "--line-height" => args.line_height = argv.next().unwrap().parse().unwrap(),
+                "--frames" => args.scroll_frames = parse_value("--frames", argv.next()),
+                "--scroll-px" => args.scroll_px = parse_value("--scroll-px", argv.next()),
+                "--line-height" => args.line_height = parse_value("--line-height", argv.next()),
                 _ => {}
             }
         }
@@ -182,10 +198,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Results ─────────────────────────────────────────────────────────────
     // No `dropped_frames` / `drop_rate_pct` / 8.33 ms comparison: this loop
     // only exercises the CPU scene build, not an end-to-end render frame.
+    // Guard the empty case (`--frames 0`): empty `iter_times_us` would make the
+    // percentile indexing panic and `avg` divide by zero (audit P5).
     iter_times_us.sort_unstable();
     let n = iter_times_us.len();
-    let p = |pct: usize| iter_times_us[n * pct / 100];
-    let avg: f64 = iter_times_us.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
+    let p = |pct: usize| {
+        if n == 0 {
+            0
+        } else {
+            iter_times_us[(n * pct / 100).min(n - 1)]
+        }
+    };
+    let avg: f64 = if n == 0 {
+        0.0
+    } else {
+        iter_times_us.iter().map(|&v| v as f64).sum::<f64>() / n as f64
+    };
 
     let result = serde_json::json!({
         "poc_id": "3b-rust-vello",
