@@ -113,6 +113,14 @@ impl PieceTable {
         // SAFETY: see the "Safety invariant (mmap)" section in the module docs —
         // the caller must ensure the file is not truncated/modified externally
         // while this map is alive (otherwise reads can SIGBUS / are UB).
+        // The workspace lint keeps `unsafe_code = "warn"` to surface every new
+        // unsafe site; this single, audited mmap is the only sanctioned one, so
+        // we `expect` it here. That also lets the CI gate (`RUSTFLAGS=-D
+        // warnings`) pass without globally demoting the lint (audit P8).
+        #[expect(
+            unsafe_code,
+            reason = "mmap of the backing file is the one audited unsafe site; safety invariant documented in the module docs"
+        )]
         let mmap = unsafe {
             MmapOptions::new()
                 .populate() // pre-fault pages on Linux; no-op on macOS (see above).

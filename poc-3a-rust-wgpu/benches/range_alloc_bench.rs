@@ -64,7 +64,11 @@ fn bench_viewport_alloc_vs_zero(c: &mut Criterion) {
         b.iter(|| {
             let mut acc = 0usize;
             pt.slice_pieces(black_box(start..end), |slice, _| {
-                acc = acc.wrapping_add(slice.iter().fold(0usize, |a, &x| a.wrapping_add(x as usize)));
+                acc = acc.wrapping_add(
+                    slice
+                        .iter()
+                        .fold(0usize, |a, &x| a.wrapping_add(x as usize)),
+                );
                 true
             });
             black_box(acc)
@@ -142,5 +146,9 @@ fn bench_full_materialize_vs_iterate(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(measure, bench_viewport_alloc_vs_zero, bench_full_materialize_vs_iterate);
+criterion_group!(
+    measure,
+    bench_viewport_alloc_vs_zero,
+    bench_full_materialize_vs_iterate
+);
 criterion_main!(measure);
