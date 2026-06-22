@@ -34,6 +34,12 @@ app.whenReady().then(() => {
     const win = new BrowserWindow({
         width: 1440, height: 900,
         webPreferences: {
+            // DEUDA CONSCIENTE (audit: electron-sin-aislamiento): este harness de
+            // benchmark local lee el corpus de 100 MB con `fs` sincrono desde el
+            // renderer, por eso usa nodeIntegration. No carga contenido remoto ni
+            // entradas no confiables. Si esto creciera a app real, migrar a
+            // preload + contextBridge con contextIsolation:true y mover el I/O al
+            // proceso main.
             nodeIntegration: true, contextIsolation: false, backgroundThrottling: false,
         },
     });
