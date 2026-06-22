@@ -155,6 +155,17 @@ impl PieceTable {
     }
 
     /// Create an in-memory PieceTable from a byte slice (for tests / REPL).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use text_buffer::{PieceTable, TextBuffer};
+    ///
+    /// let pt = PieceTable::from_bytes(b"line0\nline1\nline2".to_vec());
+    /// assert_eq!(pt.line_count(), 3);
+    /// assert_eq!(pt.line_start_byte(1), 6);
+    /// assert_eq!(pt.bytes_in_range(6..11), b"line1");
+    /// ```
     pub fn from_bytes(data: Vec<u8>) -> Self {
         let len = data.len();
         // The single Add piece covers all of `data`, so the line index can be
@@ -537,6 +548,49 @@ mod tests {
 
         // Slice ending exactly on the (new) first seam is byte-exact.
         assert_eq!(pt.bytes_in_range(0..2), b"AB");
+    }
+
+    /// Auditoría P11: `snapshot()` es parte del trait público y no tenía test;
+    /// una regresión tras inserts/deletes multi-pieza corrompería el render en
+    /// silencio. Verificamos que el snapshot coincide byte a byte con
+    /// `bytes_in_range(0..byte_len())` tras una secuencia que produce >1 pieza.
+    #[test]
+    fn test_snapshot_matches_range_after_multi_piece_edits() {
+        let mut pt = make("the quick brown fox");
+
+        // Secuencia de ediciones que fuerza varias piezas (add buffer + splits).
+        pt.insert(4, "very "); // "the very quick brown fox"
+        pt.delete(0..4); // "very quick brown fox"
+        pt.insert(0, "A "); // "A very quick brown fox"
+        pt.delete(2..7); // "A quick brown fox"  (borra "very ")
+
+        // Precondición: realmente hay más de una pieza (si no, el test no
+        // ejercita el camino multi-pieza que nos interesa).
+        assert!(
+            pt.pieces.len() > 1,
+            "el test debe terminar con >1 pieza, hay {}",
+            pt.pieces.len()
+        );
+
+        let expected = pt.bytes_in_range(0..pt.byte_len());
+        let snap = pt.snapshot();
+        assert_eq!(
+            snap.as_ref().as_ref(),
+            expected.as_slice(),
+            "snapshot() debe coincidir con bytes_in_range(0..byte_len())"
+        );
+        assert_eq!(String::from_utf8(expected).unwrap(), "A quick brown fox");
+    }
+
+    /// El snapshot es un punto en el tiempo: editar el buffer DESPUÉS de tomarlo
+    /// no debe alterar el contenido ya capturado (Arc inmutable).
+    #[test]
+    fn test_snapshot_is_immutable_point_in_time() {
+        let mut pt = make("hello");
+        let snap = pt.snapshot();
+        pt.insert(5, " world");
+        assert_eq!(snap.as_ref().as_ref(), b"hello");
+        assert_eq!(pt.bytes_in_range(0..pt.byte_len()), b"hello world");
     }
 
     /// F5 — `bytes_in_range_into` appends into a caller-owned buffer (zero-alloc

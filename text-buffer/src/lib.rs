@@ -102,5 +102,20 @@ pub trait TextBuffer: Send + Sync {
     /// O(N): the current implementation always materialises the content into
     /// a fresh allocation. (A true O(1) single-piece fast-path that shares the
     /// mmap is not implemented yet.)
+    ///
+    /// The snapshot is a point in time: mutating the buffer afterwards does not
+    /// change a snapshot already taken.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use text_buffer::{PieceTable, TextBuffer};
+    ///
+    /// let mut pt = PieceTable::from_bytes(b"hello".to_vec());
+    /// let snap = pt.snapshot();
+    /// pt.insert(5, " world");
+    /// assert_eq!(snap.as_ref().as_ref(), b"hello");
+    /// assert_eq!(pt.bytes_in_range(0..pt.byte_len()), b"hello world");
+    /// ```
     fn snapshot(&self) -> BufferSnapshot;
 }
