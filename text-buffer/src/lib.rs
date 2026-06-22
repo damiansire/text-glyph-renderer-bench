@@ -5,6 +5,11 @@
 //! buffer lives here so a fix lands once instead of being copy-pasted into
 //! both crates (which had already started to diverge).
 
+// Every public item in this crate must be documented (audit P11). The crate is
+// the shared contract consumed by both Rust PoCs, so an undocumented public API
+// is a real gap, not a style nit.
+#![deny(missing_docs)]
+
 pub mod line_index;
 pub mod piece_table;
 
@@ -111,7 +116,7 @@ pub trait TextBuffer: Send + Sync {
     /// ```
     /// use text_buffer::{PieceTable, TextBuffer};
     ///
-    /// let mut pt = PieceTable::from_bytes(b"hello".to_vec());
+    /// let mut pt = PieceTable::from_bytes(b"hello".to_vec()).unwrap();
     /// let snap = pt.snapshot();
     /// pt.insert(5, " world");
     /// assert_eq!(snap.as_ref().as_ref(), b"hello");

@@ -82,7 +82,7 @@ fn bench_piece_table_from_bytes(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{lines}L")),
             &data,
             |b, data| {
-                b.iter(|| PieceTable::from_bytes(black_box(data.clone())));
+                b.iter(|| PieceTable::from_bytes(black_box(data.clone())).unwrap());
             },
         );
     }
@@ -99,7 +99,7 @@ fn bench_piece_table_insert(c: &mut Criterion) {
             &data,
             |b, data| {
                 b.iter_batched(
-                    || PieceTable::from_bytes(data.clone()),
+                    || PieceTable::from_bytes(data.clone()).unwrap(),
                     |mut pt| {
                         // Insert at the middle of the buffer
                         let mid = pt.byte_len() / 2;
@@ -124,7 +124,7 @@ fn bench_piece_table_delete(c: &mut Criterion) {
             &data,
             |b, data| {
                 b.iter_batched(
-                    || PieceTable::from_bytes(data.clone()),
+                    || PieceTable::from_bytes(data.clone()).unwrap(),
                     |mut pt| {
                         // Delete 10 bytes at the middle
                         let mid = pt.byte_len() / 2;
@@ -144,7 +144,7 @@ fn bench_piece_table_bytes_in_range(c: &mut Criterion) {
 
     for lines in [1_000, 100_000] {
         let data = gen_text(lines);
-        let pt = PieceTable::from_bytes(data);
+        let pt = PieceTable::from_bytes(data).unwrap();
         let total = pt.byte_len();
         // Simulate reading a 60-line viewport (~4800 bytes at 80 bytes/line)
         let viewport_bytes = 60 * 82;
@@ -166,7 +166,7 @@ fn bench_piece_table_bytes_in_range(c: &mut Criterion) {
 fn bench_piece_table_line_count(c: &mut Criterion) {
     let mut group = c.benchmark_group("PieceTable/line_count");
     let data = gen_text(100_000);
-    let pt = PieceTable::from_bytes(data);
+    let pt = PieceTable::from_bytes(data).unwrap();
 
     group.bench_function("100kL static", |b| {
         b.iter(|| black_box(pt.line_count()));
@@ -177,7 +177,7 @@ fn bench_piece_table_line_count(c: &mut Criterion) {
 fn bench_piece_table_byte_to_line(c: &mut Criterion) {
     let mut group = c.benchmark_group("PieceTable/byte_to_line");
     let data = gen_text(100_000);
-    let pt = PieceTable::from_bytes(data);
+    let pt = PieceTable::from_bytes(data).unwrap();
     let mid = pt.byte_len() / 2;
 
     group.bench_function("100kL mid", |b| {

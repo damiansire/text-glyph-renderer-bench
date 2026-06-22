@@ -84,6 +84,13 @@ impl Piece {
 
 // ── PieceTable ──────────────────────────────────────────────────────────────
 
+/// Zero-copy piece table over a memory-mapped file.
+///
+/// Holds the immutable `original` mmap, an append-only `add_buffer` for inserts,
+/// and an ordered list of `pieces` describing the logical document as spans into
+/// those two buffers. A freshly loaded file is a single piece over `original`;
+/// edits add or split pieces without copying the original bytes. See the module
+/// docs for the mmap safety invariant.
 #[derive(Debug)]
 pub struct PieceTable {
     /// Memory-mapped original file (read-only, shared with GPU on UMA).
@@ -156,31 +163,38 @@ impl PieceTable {
 
     /// Create an in-memory PieceTable from a byte slice (for tests / REPL).
     ///
+    /// Returns an [`io::Result`] because the empty placeholder map used for the
+    /// `original` slot is obtained from the OS (an anonymous `mmap`), which can
+    /// fail under memory pressure (e.g. ENOMEM). Previously this allocation was
+    /// unwrapped with `.expect()` and aborted the process on failure; it now
+    /// propagates the error so callers can handle it (audit P11).
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying [`io::Error`] if the OS refuses the anonymous
+    /// memory map (out of memory / address space).
+    ///
     /// # Examples
     ///
     /// ```
     /// use text_buffer::{PieceTable, TextBuffer};
     ///
-    /// let pt = PieceTable::from_bytes(b"line0\nline1\nline2".to_vec());
+    /// let pt = PieceTable::from_bytes(b"line0\nline1\nline2".to_vec()).unwrap();
     /// assert_eq!(pt.line_count(), 3);
     /// assert_eq!(pt.line_start_byte(1), 6);
     /// assert_eq!(pt.bytes_in_range(6..11), b"line1");
     /// ```
-    pub fn from_bytes(data: Vec<u8>) -> Self {
+    pub fn from_bytes(data: Vec<u8>) -> io::Result<Self> {
         let len = data.len();
         // The single Add piece covers all of `data`, so the line index can be
         // built directly from it — no materialise round-trip needed.
         let line_index = LineIndex::build(&data);
-        Self {
-            original: {
-                // empty anonymous mmap for the "original" slot.
-                let mut opts = MmapOptions::new();
-                opts.len(1)
-                    .map_anon()
-                    .expect("anon mmap")
-                    .make_read_only()
-                    .expect("make_read_only")
-            },
+        // Empty anonymous mmap for the "original" slot. This touches the OS and
+        // can fail (ENOMEM / address-space exhaustion), so we surface the error
+        // instead of aborting the process.
+        let original = MmapOptions::new().len(1).map_anon()?.make_read_only()?;
+        Ok(Self {
+            original,
             add_buffer: data,
             pieces: vec![Piece {
                 kind: BufferKind::Add,
@@ -188,7 +202,7 @@ impl PieceTable {
                 len,
             }],
             line_index,
-        }
+        })
     }
 
     // ── Buffer resolution ─────────────────────────────────────────────────
@@ -402,7 +416,7 @@ mod tests {
     use super::*;
 
     fn make(s: &str) -> PieceTable {
-        PieceTable::from_bytes(s.as_bytes().to_vec())
+        PieceTable::from_bytes(s.as_bytes().to_vec()).expect("anon mmap for test buffer")
     }
 
     #[test]
@@ -631,7 +645,7 @@ mod tests {
     #[test]
     fn test_invalid_utf8_roundtrip() {
         let raw = vec![0x66, 0xFF, 0x0A, 0xFE, 0x6F]; // f, invalid, \n, invalid, o
-        let pt = PieceTable::from_bytes(raw.clone());
+        let pt = PieceTable::from_bytes(raw.clone()).expect("anon mmap");
         assert_eq!(pt.bytes_in_range(0..pt.byte_len()), raw);
         assert_eq!(pt.line_count(), 2);
     }

@@ -39,7 +39,7 @@ fn bench_viewport_alloc_vs_zero(c: &mut Criterion) {
 
     // Buffer de ~100 MB (1 sola pieza: el caso real de scroll read-only).
     let data = gen_text(1_300_000);
-    let pt = PieceTable::from_bytes(data);
+    let pt = PieceTable::from_bytes(data).unwrap();
     let total = pt.byte_len();
 
     // Viewport de 60 líneas (~4920 bytes) a mitad de scroll.
@@ -115,7 +115,7 @@ fn bench_full_materialize_vs_iterate(c: &mut Criterion) {
     group.sample_size(10);
 
     let data = gen_text(1_300_000);
-    let pt = PieceTable::from_bytes(data);
+    let pt = PieceTable::from_bytes(data).unwrap();
     let total = pt.byte_len();
     group.throughput(Throughput::Bytes(total as u64));
 
