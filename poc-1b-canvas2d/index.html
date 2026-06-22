@@ -191,6 +191,21 @@
             const offscreen = mainCanvas.transferControlToOffscreen();
             const worker = new Worker('./src/worker.js');
 
+            // Auditoría P12: un Worker que tira una excepción no rechaza ninguna
+            // promesa por sí solo. Sin esto, un fallo durante el init dejaba el
+            // `await ready` colgado para siempre (pantalla de carga infinita).
+            // `workerFailed` se cablea al reject de la promesa de ready.
+            let workerFailed = null;
+            worker.onerror = (ev) => {
+                ev.preventDefault();
+                const detail = ev.message || (ev.error && ev.error.message) || 'error desconocido';
+                ipcRenderer.send('log', `1B: Worker error: ${detail}`);
+                loadStatus.textContent = `Error en Worker: ${detail}`;
+                if (workerFailed) workerFailed(new Error(detail));
+            };
+            // Liberar el thread del worker al cerrar/recargar la ventana.
+            window.addEventListener('beforeunload', () => worker.terminate());
+
             // Transfer canvas + raw corpus bytes (both Transferables). The worker
             // decodes and splits into lines on its own thread.
             worker.postMessage({
@@ -199,12 +214,15 @@
             }, [offscreen, corpusBytes.buffer]);
 
             // Wait for worker ready; it reports the line count it produced.
+            // Rechaza si el worker falla antes de mandar 'ready'.
             let lineCount = 0;
-            await new Promise(resolve => {
+            await new Promise((resolve, reject) => {
+                workerFailed = reject;
                 worker.onmessage = (e) => {
                     if (e.data.type === 'ready') { lineCount = e.data.lineCount; resolve(); }
                 };
             });
+            workerFailed = null;
             ipcRenderer.send('log', `1B: ${lineCount} líneas en ${split_ms.toFixed(1)}ms`);
 
             overlay.style.display = 'none';
