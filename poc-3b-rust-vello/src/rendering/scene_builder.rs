@@ -71,8 +71,10 @@ impl TextSceneBuilder {
         let scene = Scene::new();
 
         // Nothing to traverse for an empty document. Guard before computing
-        // `lines.len() - 1`, which would underflow on an empty slice.
-        if lines.is_empty() {
+        // `lines.len() - 1`, which would underflow on an empty slice. Also bail
+        // when `first_line` is past the end: otherwise `lines[first_line..=..]`
+        // would have `start > end` and panic on the slice.
+        if first_line >= lines.len() {
             return scene;
         }
 
