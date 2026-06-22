@@ -27,6 +27,17 @@ import sys
 import time
 from pathlib import Path
 
+# El corpus y los mensajes de progreso contienen Unicode (→, box-drawing, CJK).
+# En consolas no-UTF8 (p.ej. cp1252 en Windows) un `print` de esos caracteres
+# lanzaría UnicodeEncodeError. Forzamos UTF-8 en stdout/stderr para que el
+# generador corra igual en cualquier plataforma. El archivo de salida ya se abre
+# explícitamente con encoding="utf-8", así que su contenido no se ve afectado.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 # ─── Corpus de segmentos ────────────────────────────────────────────────
 
 PROSE_EN = [
@@ -258,7 +269,11 @@ def generate_testfile(output_path: Path, target_mb: int = 100, seed: int = 42) -
     lines_written = 0
     sha = hashlib.sha256()
 
-    with open(output_path, "w", encoding="utf-8", buffering=256 * 1024) as f:
+    # `newline="\n"` evita que el modo texto traduzca \n→\r\n en Windows: sin
+    # esto el corpus quedaba con CRLF y un SHA-256 distinto al canónico de
+    # macOS/Linux (rompiendo la reproducibilidad cross-plataforma; el `--verify`
+    # no lo detectaba porque compara contra un meta que él mismo generó).
+    with open(output_path, "w", encoding="utf-8", newline="\n", buffering=256 * 1024) as f:
         while written < target_bytes:
             line = generate_line(rng)
             line_bytes = (line + "\n").encode("utf-8")

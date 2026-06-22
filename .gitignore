@@ -12,6 +12,10 @@ node_modules/
 dist/
 .cache/
 
+# ── Python ──────────────────────────────────────
+__pycache__/
+*.pyc
+
 # ── Benchmark results ────────────────────────────
 results/
 poc-*/results/
