@@ -9,7 +9,7 @@
         "gen-atlas": "bash tools/generate_msdf_atlas.sh"
     },
     "dependencies": {
-        "electron": "^30.0.0"
+        "electron": "^42.0.0"
     },
     "license": "MIT"
 }

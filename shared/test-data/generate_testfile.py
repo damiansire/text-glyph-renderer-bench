@@ -22,7 +22,6 @@ Seed: 42 (siempre produce el mismo archivo)
 import random
 import argparse
 import hashlib
-import os
 import sys
 import time
 from pathlib import Path
@@ -334,7 +333,7 @@ def verify_file(path: Path) -> None:
     if digest == meta["sha256"]:
         print(f"✓ SHA-256 correcta: {digest}")
     else:
-        print(f"✗ SHA-256 NO coincide!")
+        print("✗ SHA-256 NO coincide!")
         print(f"  Esperado: {meta['sha256']}")
         print(f"  Obtenido: {digest}")
         sys.exit(1)

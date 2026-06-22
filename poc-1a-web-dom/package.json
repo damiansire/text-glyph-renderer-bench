@@ -10,7 +10,7 @@
         "benchmark:headless": "electron . --benchmark --headless"
     },
     "dependencies": {
-        "electron": "^30.0.0"
+        "electron": "^42.0.0"
     },
     "devDependencies": {
         "electron-builder": "^24.0.0"

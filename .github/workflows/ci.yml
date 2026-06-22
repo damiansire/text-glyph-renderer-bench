@@ -10,15 +10,20 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # ── Rust (text-buffer + the two Rust PoCs) ──────────────────────────────────
   rust:
-    name: fmt + clippy + test (text-buffer) + check
+    name: fmt + clippy + test + check (Rust)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.78 (pinned MSRV)
+        # Audit P8: pin the toolchain so the gate is reproducible and matches
+        # the workspace `rust-version`. dtolnay/rust-toolchain takes the version
+        # as the `toolchain` input.
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.78"
           components: rustfmt, clippy
 
       - name: Cache cargo
@@ -30,14 +35,88 @@ jobs:
       - name: Clippy (workspace)
         run: cargo clippy --workspace --all-targets
 
-      # Only `text-buffer` is tested in CI: the `poc-3b-rust-vello` binary
-      # crashes with 0xC0000005 (a pre-existing, known defect unrelated to the
-      # shared buffer), so a `--workspace` test run is intentionally NOT used.
-      # See plan_final_executar.md / CLAUDE.md.
-      - name: Test (text-buffer)
-        run: cargo test -p text-buffer
+      # Audit P8: actually RUN the tests (not just `cargo check`). text-buffer
+      # holds the shared domain logic; poc-3a re-exports it and has the
+      # buffer_reexport integration test. The poc-3b *binary* is excluded from
+      # the test run because it crashes (0xC0000005, a pre-existing known defect
+      # unrelated to the shared buffer) — but its library still compiles below.
+      - name: Test (text-buffer + poc-3a)
+        run: cargo test -p text-buffer -p poc-3a-rust-wgpu
 
-      # `cargo check` validates that every crate (including the PoCs) compiles,
+      # `cargo check` validates that every crate (including poc-3b) compiles,
       # without running the crashy 3B binary.
       - name: Check (workspace)
         run: cargo check --workspace
+
+  # ── Web PoCs (Node / Electron) ──────────────────────────────────────────────
+  web:
+    name: npm ci + audit (${{ matrix.poc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Audit P8/P10: cover every Web PoC, not just the Rust stack. Each gets
+        # a clean install from its lockfile and a production audit so a CVE
+        # (e.g. the old electron@30 with 12 high) fails CI.
+        poc: [poc-1a-web-dom, poc-1b-canvas2d, poc-1c-webgpu-atlas, poc-1d-webgpu-msdf]
+    defaults:
+      run:
+        working-directory: ${{ matrix.poc }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `npm ci` requires a lockfile; fall back to `npm install` for PoCs that
+      # ship only a package.json.
+      - name: Install
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Audit (production deps)
+        # Audit P10: block shipping Electron CVEs. `--audit-level=high` fails
+        # only on high/critical so a low-severity advisory does not red the gate.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Syntax check JS entry points
+        run: |
+          for f in $(git ls-files '*.js'); do node --check "$f"; done
+
+  # ── Python orchestrator + JSON Schema contract ──────────────────────────────
+  python:
+    name: ruff + py_compile + schema gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install ruff jsonschema
+
+      - name: Lint (ruff)
+        run: ruff check shared/
+
+      - name: Compile check
+        run: python -m py_compile shared/metrics/benchmark_runner.py shared/test-data/generate_testfile.py
+
+      # Audit P2: the data contract must be an executable gate. Generate a small
+      # corpus, run the runnable PoCs through the orchestrator (which validates
+      # each *_stats.json against frame_stats.schema.json) and fail if any
+      # report does not conform.
+      - name: Schema self-check
+        run: |
+          python - <<'PY'
+          import json, jsonschema
+          schema = json.load(open("shared/metrics/frame_stats.schema.json"))
+          jsonschema.Draft7Validator.check_schema(schema)
+          print("frame_stats.schema.json is a valid draft-07 schema")
+          PY

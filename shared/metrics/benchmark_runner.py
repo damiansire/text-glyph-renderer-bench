@@ -130,7 +130,7 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
         # poc-X/results (relative to their cwd) and the runner never found them.
         env["BENCH_RESULTS_DIR"] = str(RESULTS_DIR)
 
-        result = subprocess.run(
+        subprocess.run(
             info["cmd"],
             cwd=str(info["cwd"]),
             env=env,
@@ -156,7 +156,7 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
             print(f"  WARNING: result file not found: {result_file}")
             return None
     except subprocess.TimeoutExpired:
-        print(f"  TIMEOUT after 300s")
+        print("  TIMEOUT after 300s")
         return None
     except subprocess.CalledProcessError as e:
         print(f"  ERROR: exit code {e.returncode}")
@@ -303,7 +303,7 @@ def write_markdown(rows: list[dict], out_path: Path) -> None:
     lines = [
         "# Text Engine PoC — Benchmark Comparison",
         f"Generated: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
-        f"Test file: 100 MB, seed=42 | Frame budget: 8.33 ms (120 Hz) | Scroll: 60px/frame",
+        "Test file: 100 MB, seed=42 | Frame budget: 8.33 ms (120 Hz) | Scroll: 60px/frame",
         "",
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] * len(headers)) + " |",
