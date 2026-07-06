@@ -13,8 +13,10 @@ name = "poc3a"
 path = "src/main.rs"
 
 # Solo lo que el crate usa de verdad: la lib re-exporta `text-buffer` y `main`
-# serializa stats con `serde_json`. Las deps de GPU/shaping/runtime (wgpu, winit,
-# tokio, rustybuzz, ttf-parser, lru) se reincorporan cuando exista el renderer.
+# serializa stats con `serde_json`. Las deps de GPU/shaping (wgpu, winit,
+# rustybuzz, ttf-parser, lru) se reincorporan cuando exista el renderer. El
+# runtime async (tokio) NO se reintroduce especulativamente: se agrega cuando
+# haya uso real, con las features mínimas segun ese uso.
 [dependencies]
 text-buffer = { path = "../text-buffer" }
 serde_json  = { workspace = true }

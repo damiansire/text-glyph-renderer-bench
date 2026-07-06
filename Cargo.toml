@@ -38,9 +38,6 @@ allow_attributes_without_reason = "warn"
 memmap2    = "0.9"
 memchr     = "2.7"
 
-# Async runtime
-tokio      = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
-
 # GPU backends
 wgpu       = { version = "22", features = ["metal"] }
 
