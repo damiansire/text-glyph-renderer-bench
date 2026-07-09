@@ -1,4 +1,5 @@
 {
+  "private": true,
     "name": "poc-1d-webgpu-msdf",
     "version": "1.0.0",
     "description": "PoC 1D — WebGPU + MSDF (Multi-channel Signed Distance Field) atlas renderer",

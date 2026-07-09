@@ -1,4 +1,5 @@
 {
+  "private": true,
     "name": "poc-1a-web-dom",
     "version": "1.0.0",
     "description": "PoC 1A — Web DOM (Electron) baseline text renderer",
