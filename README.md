@@ -76,3 +76,25 @@ The Rust PoCs (3A/3B) are microbenchmarks that deliberately do **not** report a
 frame-budget verdict (they measure line-index traversal / CPU scene build only);
 their rows show `n/a` for the drop rate so the table never implies a comparison
 they did not measure.
+
+## Statistical Methodology
+
+- **Runs per PoC**: each implemented PoC's `benchmark_runner.py` invocation
+  aggregates a full scroll pass over `test_100mb.txt` into a single
+  `results/<poc-id>_stats.json` (see `frame_stats.schema.json`) — one
+  aggregated report per run, not per-frame raw samples.
+- **Percentiles, not just averages**: the schema's `benchmark` block reports
+  frame-time percentiles (not a single mean), so a PoC that is fast on average
+  but spikes under GC/allocator pressure can't hide behind the mean.
+- **Warm-up**: run each PoC's benchmark script twice and discard the first run
+  before recording a comparison number — the first pass pays font-parse/shape
+  cache-miss cost that a real session wouldn't repeat (see the cold/warm rule
+  for Rust benches in `CLAUDE.md`).
+- **Thermal throttling**: on Apple Silicon, a benchmark run right after a
+  build/compile can read slower purely from thermal state, not from the code
+  under test — let the machine idle a minute after `cargo build --release`
+  before recording a number you intend to publish in this README.
+- **What's NOT yet true**: none of the above (warm-up discipline, thermal
+  cooldown) is enforced automatically by `benchmark_runner.py` today — it's a
+  manual protocol for whoever runs the benchmark and publishes a number here,
+  not a guarantee the JSON reports already encode.
