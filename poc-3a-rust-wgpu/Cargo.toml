@@ -12,17 +12,27 @@ description = "PoC 3A — Rust + wgpu (Metal backend) + HarfBuzz/rustybuzz text 
 name = "poc3a"
 path = "src/main.rs"
 
-# Solo lo que el crate usa de verdad: la lib re-exporta `text-buffer` y `main`
-# serializa stats con `serde_json`. Las deps de GPU/shaping (wgpu, winit,
-# rustybuzz, ttf-parser, lru) se reincorporan cuando exista el renderer. El
-# runtime async (tokio) NO se reintroduce especulativamente: se agrega cuando
-# haya uso real, con las features mínimas segun ese uso.
+# El render GPU real llego (tgrb-4): rasterizador CPU (ttf-parser) + atlas de
+# texturas + shaping HarfBuzz (rustybuzz) + pipeline wgpu (headless, sin
+# winit: se renderiza a una textura offscreen, no hace falta ventana para el
+# benchmark). El runtime async (tokio) sigue sin reintroducirse: `pollster`
+# alcanza para bloquear sobre los dos `Future` de wgpu (request_adapter /
+# request_device), no hace falta un executor completo.
 [dependencies]
 text-buffer = { path = "../text-buffer" }
 serde_json  = { workspace = true }
+wgpu        = { workspace = true }
+rustybuzz   = { workspace = true }
+ttf-parser  = { workspace = true }
+lru         = { workspace = true }
+# No esta en [workspace.dependencies]: es chiquita, sin deps propias, solo
+# bloquea sobre los dos `Future` que expone wgpu (request_adapter /
+# request_device) tanto en el CLI (--bench) como en los tests con GPU real.
+pollster    = "0.3"
 
 [dev-dependencies]
-criterion = { workspace = true }
+criterion       = { workspace = true }
+font-test-data  = "0.4.1"
 
 [[bench]]
 name = "buffer_bench"
