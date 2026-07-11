@@ -688,6 +688,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "font-test-data"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64cfb9f760c44dcec97c8709a627acde4e9e3d21eedf6bf42b8d128d757bf675"
+dependencies = [
+ "font-types 0.9.0",
+]
+
+[[package]]
 name = "font-types"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -695,6 +704,12 @@ checksum = "34fd7136aca682873d859ef34494ab1a7d3f57ecd485ed40eb6437ee8c85aa29"
 dependencies = [
  "bytemuck",
 ]
+
+[[package]]
+name = "font-types"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02a596f5713680923a2080d86de50fe472fb290693cf0f701187a1c8b36996b7"
 
 [[package]]
 name = "font-types"
@@ -1531,6 +1546,7 @@ name = "poc-3b-rust-vello"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "font-test-data",
  "memchr",
  "memmap2",
  "serde",

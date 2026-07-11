@@ -38,3 +38,7 @@ shared/fonts/*.otf
 # ── MSDF Atlas (generated offline) ──────────────
 poc-1d-webgpu-msdf/assets/*.png
 poc-1d-webgpu-msdf/assets/*.bin
+
+# ── Fragua audit reports (local only) ────────────
+_audit/
+_audits/

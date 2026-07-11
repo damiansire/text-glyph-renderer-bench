@@ -38,6 +38,7 @@ skrifa     = "0.19"   # Google's OpenType font reading library used by Vello int
 
 [dev-dependencies]
 criterion = { workspace = true }
+font-test-data = "0.4.1"
 
 [[bench]]
 name = "buffer_bench"

@@ -21,7 +21,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design.
 | `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | — |
 | `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | — |
 | `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | buffer/line-index only (no GPU render yet) |
-| `poc-3b-rust-vello` | Rust + Vello | Systems | **render NOT implemented** — `build_scene` returns an empty `Scene` (no geometry) |
+| `poc-3b-rust-vello` | Rust + Vello | Systems | `build_scene` now encodes real glyph geometry via `Scene::draw_glyphs` (vello 0.7's current API — the prior "GlyphProvider" it depended on was removed in vello 0.2). Covered by 3 unit tests. Actual on-screen GPU render / visual verification still pending. |
 
 ## Initial Setup
 
@@ -33,7 +33,21 @@ python3 generate_testfile.py
 # → generates test_100mb.txt (~100 MB, seed=42)
 ```
 
-### 2. Build Rust workspace
+### 2. Get a test font
+
+`shared/fonts/*.ttf` is gitignored on purpose (fonts aren't ours to redistribute) but
+was never documented — PoC 3B defaults to `shared/fonts/InterVariable.ttf` and fails
+to even start without it:
+
+```bash
+mkdir -p shared/fonts
+curl -L -o shared/fonts/InterVariable.ttf \
+  https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.ttf
+```
+
+(Any real `.ttf`/`.otf` works — pass a different one with `--font <path>`.)
+
+### 3. Build Rust workspace
 
 ```bash
 # From the monorepo root
@@ -41,7 +55,7 @@ cargo build --release -p poc-3a-rust-wgpu
 cargo build --release -p poc-3b-rust-vello
 ```
 
-### 3. Web PoCs (Node.js / Electron)
+### 4. Web PoCs (Node.js / Electron)
 
 ```bash
 # PoC 1A — Web DOM
