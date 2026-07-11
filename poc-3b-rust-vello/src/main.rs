@@ -124,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.scroll_frames
     );
     println!(
-        "  (measures CPU scene build only — NO geometry/raster/GPU,\n   so no frame-budget drop rate is reported)"
+        "  (measures CPU scene build — real glyph geometry, no raster/GPU submission,\n   so no frame-budget drop rate is reported)"
     );
 
     // F6 (memory): do NOT materialise the whole ~100 MB file into a contiguous
@@ -183,8 +183,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|&(s, e)| &window_bytes[s..e])
             .collect();
 
-        // CPU-side scene build for the visible viewport (line traversal +
-        // charmap lookups). Builds no geometry and submits nothing to the GPU.
+        // CPU-side scene build for the visible viewport (shaping + real glyph
+        // geometry via `Scene::draw_glyphs`). Submits nothing to the GPU.
         // `first_line` is 0 because `lines` already starts at the first visible
         // line (the window was sliced for this frame).
         let _scene = scene_builder.build_scene(&lines, 0, VIEWPORT_H, args.line_height, scroll_y);
@@ -220,7 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = serde_json::json!({
         "poc_id": "3b-rust-vello",
-        "measures": "cpu-scene-build-only (no geometry/raster/gpu)",
+        "measures": "cpu-scene-build-only (real glyph geometry, no raster/gpu submission)",
         "file": { "line_count": line_count, "load_ms": t_load.elapsed().as_millis() },
         "scene_build": {
             "total_iters": args.scroll_frames,
@@ -229,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "p95_ms": p(95) as f64 / 1000.0,
             "p99_ms": p(99) as f64 / 1000.0,
             "avg_us": avg,
-            "note": "headless: CPU scene build only; builds no geometry and excludes GPU submission",
+            "note": "headless: CPU scene build with real glyph geometry (draw_glyphs); excludes GPU submission",
         }
     });
 
