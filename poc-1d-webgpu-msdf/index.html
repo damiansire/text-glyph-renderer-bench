@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>PoC 1D — WebGPU + MSDF</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            background: #1a1b1e;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #hud {
+            position: fixed;
+            top: 8px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font: 11px/1.6 monospace;
+            color: #aaa;
+            z-index: 100;
+            min-width: 220px;
+        }
+
+        #hud h3 {
+            color: #58a6ff;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        #hud .row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        #hud .val {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        #hud .drop {
+            color: #f85149;
+        }
+
+        #hud .ok {
+            color: #3fb950;
+        }
+
+        #load-overlay {
+            position: fixed;
+            inset: 0;
+            background: #1a1b1e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 200;
+        }
+
+        #load-overlay h1 {
+            font: 16px monospace;
+            color: #58a6ff;
+        }
+
+        #lb-wrap {
+            width: 300px;
+            height: 6px;
+            background: #25262b;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        #lb {
+            height: 100%;
+            background: #58a6ff;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        #ls {
+            font: 11px monospace;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="load-overlay">
+        <h1>PoC 1D — WebGPU + MSDF</h1>
+        <div id="lb-wrap">
+            <div id="lb"></div>
+        </div>
+        <div id="ls">Iniciando…</div>
+    </div>
+    <div id="hud" style="display:none">
+        <h3>PoC 1D — WebGPU MSDF</h3>
+        <div class="row"><span>Frame</span> <span class="val" id="h-f">—</span></div>
+        <div class="row"><span>CPU encode</span> <span class="val" id="h-cpu">—</span></div>
+        <div class="row"><span>Glyphs</span> <span class="val" id="h-gly">—</span></div>
+        <div class="row"><span>Atlas hit%</span> <span class="val ok" id="h-hit">—</span></div>
+        <div class="row"><span>Dropped</span> <span class="val drop" id="h-drop">0</span></div>
+        <div class="row"><span>P95 (ms)</span> <span class="val" id="h-p95">—</span></div>
+    </div>
+    <canvas id="c"></canvas>
+
+    <script type="module">
+        import './src/renderer.js';
+
+        (async () => {
+            const params = new URLSearchParams(window.location.search);
+            const FILE = params.get('file') || '';
+            const DO_BENCH = params.get('benchmark') === '1';
+            const SCROLL_PX = parseFloat(params.get('scrollPx')) || 60;
+            const FRAMES = parseInt(params.get('scrollFrames')) || 3600;
+            const LINE_H = parseFloat(params.get('lineHeight')) || 20;
+            const FONT_SIZE = 13;
+
+            const { ipcRenderer } = require('electron');
+            const fs = require('fs');
+            const path = require('path');
+
+            const canvas = document.getElementById('c');
+            const DPR = window.devicePixelRatio || 1;
+            canvas.width = Math.round(window.innerWidth * DPR);
+            canvas.height = Math.round(window.innerHeight * DPR);
+
+            const lb = document.getElementById('lb');
+            const ls = document.getElementById('ls');
+
+            // ── Check WebGPU ──────────────────────────────────────────────────────
+            if (!navigator.gpu) {
+                ls.textContent = '❌ WebGPU not available. Enable with --enable-unsafe-webgpu flag.';
+                return;
+            }
+
+            // ── Load file ─────────────────────────────────────────────────────────
+            const t_load = performance.now();
+            ls.textContent = `Leyendo ${path.basename(FILE)}…`;
+            const CHUNK = 4 * 1024 * 1024;
+            const fd = fs.openSync(FILE, 'r');
+            const size = fs.fstatSync(fd).size;
+            const chunks = [];
+            let offset = 0;
+            while (offset < size) {
+                const buf = Buffer.alloc(Math.min(CHUNK, size - offset));
+                const read = fs.readSync(fd, buf, 0, buf.length, offset);
+                chunks.push(buf.slice(0, read).toString('utf8'));
+                offset += read;
+                lb.style.width = Math.round(100 * offset / size) + '%';
+                ls.textContent = `${(offset / 1e6).toFixed(1)} / ${(size / 1e6).toFixed(1)} MB`;
+                await new Promise(r => setTimeout(r, 0));
+            }
+            fs.closeSync(fd);
+            const load_ms = performance.now() - t_load;
+            ls.textContent = 'Split de líneas…';
+            await new Promise(r => setTimeout(r, 0));
+            const lines = chunks.join('').split('\n');
+
+            // ── Load MSDF atlas metadata ─────────────────────────────────────────
+            ls.textContent = 'Cargando atlas MSDF…';
+            await new Promise(r => setTimeout(r, 0));
+            const atlasJsonPath = path.join(__dirname, 'assets', 'inter_msdf_atlas.json');
+            if (!fs.existsSync(atlasJsonPath)) {
+                ls.textContent = `❌ Falta ${atlasJsonPath}. Corré "npm run gen-atlas" primero.`;
+                return;
+            }
+            const atlasMetaJson = JSON.parse(fs.readFileSync(atlasJsonPath, 'utf8'));
+
+            // ── Init WebGPU ───────────────────────────────────────────────────────
+            ls.textContent = 'Iniciando WebGPU…';
+
+            const renderer = new MSDFRenderer();
+            await renderer.init(canvas, atlasMetaJson);
+
+            ls.textContent = 'Listo.';
+            document.getElementById('load-overlay').style.display = 'none';
+            document.getElementById('hud').style.display = 'block';
+
+            // ── Metrics ───────────────────────────────────────────────────────────
+            const BUDGET_MS = 1000 / 120;
+            const frameTimes = [];
+            let dropped = 0, frame = 0;
+            let scrollY = 0;
+            const totalH = lines.length * LINE_H;
+            // El atlas MSDF está pre-generado offline: no hay rasterización en vivo
+            // ni misses de atlas en runtime (a diferencia de PoC 1C).
+            const ATLAS_HIT_RATE = 1.0;
+            const ATLAS_FILL_RATIO = 1.0;
+
+            function renderFrame() {
+                const cpuMs = renderer.renderFrame(lines, scrollY, LINE_H, FONT_SIZE);
+                frameTimes.push(cpuMs);
+                if (cpuMs > BUDGET_MS) dropped++;
+                return cpuMs;
+            }
+
+            function updateHud(cpuMs) {
+                if (frame % 60 !== 0) return;
+                const n = frameTimes.length;
+                const sorted = [...frameTimes].sort((a, b) => a - b);
+                document.getElementById('h-f').textContent = frame;
+                document.getElementById('h-cpu').textContent = cpuMs.toFixed(2) + ' ms';
+                document.getElementById('h-gly').textContent = `~${Math.ceil(window.innerHeight / LINE_H * 40)}`;
+                document.getElementById('h-hit').textContent = (ATLAS_HIT_RATE * 100).toFixed(1) + '%';
+                document.getElementById('h-drop').textContent = dropped;
+                document.getElementById('h-p95').textContent = (sorted[Math.floor(n * 0.95)] || 0).toFixed(2);
+            }
+
+            // ── Interactive mode ──────────────────────────────────────────────────
+            if (!DO_BENCH) {
+                function loop() { renderFrame(); requestAnimationFrame(loop); }
+                window.addEventListener('wheel', e => { e.preventDefault(); scrollY = Math.max(0, scrollY + e.deltaY); }, { passive: false });
+                requestAnimationFrame(loop);
+                return;
+            }
+
+            // ── Benchmark mode ────────────────────────────────────────────────────
+            function benchFrame() {
+                if (frame >= FRAMES) {
+                    const n = frameTimes.length;
+                    const s = [...frameTimes].sort((a, b) => a - b);
+                    const p = pct => s[Math.floor(n * pct / 100)] || 0;
+                    const result = {
+                        poc_id: '1d-webgpu-msdf',
+                        file: { line_count: lines.length, load_ms: +load_ms.toFixed(2) },
+                        atlas: {
+                            hit_rate: ATLAS_HIT_RATE,
+                            fill_ratio: ATLAS_FILL_RATIO,
+                            note: 'Atlas MSDF pre-generado offline: sin rasterización ni misses en runtime.',
+                        },
+                        benchmark: {
+                            total_frames: n, dropped_frames: dropped,
+                            drop_rate_pct: +(dropped / n * 100).toFixed(2),
+                            p50_ms: +p(50).toFixed(3), p95_ms: +p(95).toFixed(3),
+                            p99_ms: +p(99).toFixed(3), budget_ms: BUDGET_MS,
+                        },
+                    };
+                    ipcRenderer.send('benchmark-complete', result);
+                    return;
+                }
+                const cpuMs = renderFrame();
+                updateHud(cpuMs);
+                scrollY += SCROLL_PX;
+                if (scrollY + window.innerHeight > totalH) scrollY = 0;
+                frame++;
+                requestAnimationFrame(benchFrame);
+            }
+            requestAnimationFrame(benchFrame);
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,16 +1,21 @@
 {
   "private": true,
-    "name": "poc-1d-webgpu-msdf",
-    "version": "1.0.0",
-    "description": "PoC 1D — WebGPU + MSDF (Multi-channel Signed Distance Field) atlas renderer",
-    "main": "src/main.js",
-    "scripts": {
-        "start": "electron .",
-        "benchmark": "electron . --benchmark",
-        "gen-atlas": "bash tools/generate_msdf_atlas.sh"
-    },
-    "dependencies": {
-        "electron": "^42.0.0"
-    },
-    "license": "MIT"
+  "name": "poc-1d-webgpu-msdf",
+  "version": "1.0.0",
+  "description": "PoC 1D — WebGPU + MSDF (Multi-channel Signed Distance Field) atlas renderer",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "benchmark": "electron . --benchmark",
+    "gen-atlas": "node tools/generate_msdf_atlas.js",
+    "gen-atlas-native": "bash tools/generate_msdf_atlas.sh"
+  },
+  "dependencies": {
+    "electron": "^42.0.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "opentype.js": "^2.0.0",
+    "pngjs": "^7.0.0"
+  }
 }
