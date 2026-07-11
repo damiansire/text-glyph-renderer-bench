@@ -112,12 +112,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Headless scene-build microbenchmark (no GPU window) ────────────────
     // IMPORTANT — what this measures: per iteration it runs the CPU-side scene
-    // build for the visible viewport (line traversal + charmap lookups). It
-    // builds NO geometry and does NO GPU submission (see `build_scene` docs and
-    // the PoC status in the README). Therefore it does NOT report
-    // `dropped_frames` / `drop_rate` against the 8.33 ms frame budget: doing so
-    // would over-sell a CPU microbenchmark as an end-to-end render budget.
-    // Re-introduce the frame-budget verdict only once real geometry + GPU land.
+    // build for the visible viewport (shaping + real glyph geometry encoded via
+    // `Scene::draw_glyphs`, see `build_scene` docs). It does NOT submit to the
+    // GPU (no window, no render pass) — this is scene *construction* cost only.
+    // Therefore it does NOT report `dropped_frames` / `drop_rate` against the
+    // 8.33 ms frame budget: doing so would over-sell a CPU microbenchmark as an
+    // end-to-end render budget. Re-introduce the frame-budget verdict only once
+    // this PoC actually submits the built scene to the GPU and presents a frame.
     println!(
         "\nRunning headless scene-build microbench: {} iters ...",
         args.scroll_frames
