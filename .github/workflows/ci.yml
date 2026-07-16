@@ -1,5 +1,16 @@
 name: CI
 
+# Coverage note (tgrb-1): this workflow runs entirely on `ubuntu-latest` and
+# therefore CANNOT build or run `poc-2a-textkit2` / `poc-2b-metal3-coretext`
+# (native macOS: TextKit 2 and Metal 3 are Apple-only APIs, the Swift
+# toolchain for them does not target Linux). Those two PoCs are the only ones
+# NOT covered by any job below. Everything else (the two Rust PoCs, the four
+# Web/Electron PoCs, the Python orchestrator) IS covered. Running 2A/2B in CI
+# would require a `macos-latest` runner; that is tracked separately in
+# `bench.yml`'s cross-platform matrix, which builds/benches the Rust PoCs
+# (the only stacks that are actually cross-platform) on macOS too, but still
+# does not exercise 2A/2B since they are out of scope for that workflow.
+
 on:
   push:
     branches: [main]
@@ -35,16 +46,22 @@ jobs:
       - name: Clippy (workspace)
         run: cargo clippy --workspace --all-targets
 
-      # Audit P8: actually RUN the tests (not just `cargo check`). text-buffer
-      # holds the shared domain logic; poc-3a re-exports it and has the
-      # buffer_reexport integration test. The poc-3b *binary* is excluded from
-      # the test run because it crashes (0xC0000005, a pre-existing known defect
-      # unrelated to the shared buffer) — but its library still compiles below.
-      - name: Test (text-buffer + poc-3a)
-        run: cargo test -p text-buffer -p poc-3a-rust-wgpu
+      # Audit P8 / tgrb-1: run every Rust crate's tests, including poc-3b.
+      # poc-3b's binary used to be excluded here because it crashed
+      # (0xC0000005) — that crash predated the fix that made `build_scene`
+      # encode real glyph geometry via `Scene::draw_glyphs` (see git history);
+      # re-verified after that fix landed: `cargo test -p poc-3b-rust-vello`
+      # and a real `--bench --headless` run both complete cleanly now, so the
+      # exclusion no longer applies and was silently hiding a working crate.
+      # GPU-dependent tests (poc-3a's real atlas render) skip themselves with
+      # a clear message when no GPU adapter is available, which is expected
+      # on this `ubuntu-latest` runner (see poc-3a's own README/doc-comments).
+      - name: Test (workspace)
+        run: cargo test --workspace
 
-      # `cargo check` validates that every crate (including poc-3b) compiles,
-      # without running the crashy 3B binary.
+      # `cargo check` re-validates the full workspace compiles; cheap and
+      # redundant with `cargo test` for crates with tests, but also catches
+      # non-test binaries/examples that `cargo test` would not build.
       - name: Check (workspace)
         run: cargo check --workspace
 

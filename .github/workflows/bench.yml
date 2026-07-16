@@ -1,0 +1,90 @@
+name: Bench
+
+# Cross-platform benchmark matrix, separate from `ci.yml` (which is the
+# correctness gate). This workflow is informational: it runs the
+# cross-platform Rust PoCs (3A/3B, the only stacks that build on all three
+# OSes — 2A/2B are macOS-only Swift, 1A-1D are Electron/WebGPU and depend on
+# a GPU adapter being available in the runner, which is not guaranteed) and
+# uploads each platform's `*_stats.json` as an artifact. It never fails the
+# build on a slow/degraded number — only on the PoCs not compiling/running.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "poc-3a-rust-wgpu/**"
+      - "poc-3b-rust-vello/**"
+      - "text-buffer/**"
+      - "shared/test-data/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/bench.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: bench (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.78 (pinned MSRV)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.78"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Full 100 MB corpus is unnecessary (and slow) for a CI smoke bench —
+      # a 5 MB slice exercises the same code paths (shaping, atlas, line
+      # index) at a fraction of the wall-clock cost.
+      - name: Generate small test corpus
+        run: python3 shared/test-data/generate_testfile.py --size 5
+
+      - name: Get a test font
+        shell: bash
+        run: |
+          mkdir -p shared/fonts
+          curl -L -o shared/fonts/InterVariable.ttf \
+            https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.ttf
+
+      - name: Build Rust PoCs (release)
+        run: cargo build --release -p poc-3a-rust-wgpu -p poc-3b-rust-vello
+
+      # `--frames` kept small: this workflow verifies the cross-platform path
+      # runs end-to-end and captures a real number for the README table, it
+      # is not the statistically-rigorous run described in the README's
+      # "Statistical Methodology" section (warm-up passes, thermal cooldown).
+      # GPU adapters are not guaranteed on hosted runners (see poc-3a's own
+      # `gpu_available` field in its report) — a `false` value here is an
+      # honest result, not a failure.
+      - name: Run PoC 3A bench (wgpu + HarfBuzz)
+        shell: bash
+        run: |
+          cargo run --release -p poc-3a-rust-wgpu -- \
+            --file shared/test-data/test_5mb.txt --bench --frames 200
+
+      - name: Run PoC 3B bench (Vello, headless scene build)
+        shell: bash
+        run: |
+          cargo run --release -p poc-3b-rust-vello -- \
+            --file shared/test-data/test_5mb.txt --font shared/fonts/InterVariable.ttf \
+            --bench --headless --frames 200
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ matrix.os }}
+          path: results/*.json
+          if-no-files-found: warn
