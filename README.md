@@ -80,7 +80,7 @@ npm run benchmark
 
 - macOS 14+ (Sonoma) · Apple Silicon (M1 or higher)
 - Xcode 15+ (for PoCs 2A, 2B)
-- Rust 1.78+ (`rustup update`)
+- Rust 1.85+ (`rustup update`)
 - Node.js 20+ · npm 10+
 - Python 3.11+
 

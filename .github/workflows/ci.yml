@@ -28,13 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust 1.78 (pinned MSRV)
+      - name: Install Rust 1.85 (pinned MSRV)
         # Audit P8: pin the toolchain so the gate is reproducible and matches
         # the workspace `rust-version`. dtolnay/rust-toolchain takes the version
-        # as the `toolchain` input.
+        # as the `toolchain` input. 1.85 is the MSRV: vello 0.7 (poc-3b) needs
+        # edition2024, stabilized in 1.85.
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.78"
+          toolchain: "1.85"
           components: rustfmt, clippy
 
       - name: Cache cargo

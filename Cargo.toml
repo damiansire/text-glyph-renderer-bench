@@ -8,7 +8,10 @@ resolver = "2"
 
 [workspace.package]
 # MSRV: fuente unica de verdad. Mantener en sync con el README.
-rust-version = "1.78"
+# 1.85: minimo que estabiliza edition2024, requerido por vello 0.7 (dep del
+# poc-3b). Con 1.78 el workspace no compilaba: vello?branch=main derivo a pedir
+# `feature edition2024`, que recien es stable desde 1.85.
+rust-version = "1.85"
 license = "MIT"
 authors = ["Damian Sire <damiansire@gmail.com>"]
 repository = "https://github.com/damiansire/text-glyph-renderer-bench"
