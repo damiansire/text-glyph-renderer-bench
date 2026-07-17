@@ -42,3 +42,10 @@ poc-1d-webgpu-msdf/assets/*.bin
 # ── Fragua audit reports (local only) ────────────
 _audit/
 _audits/
+
+# ── Local environment ────────────────────────────
+# .env holds per-machine shell toggles (e.g. ELECTRON_ENABLE_LOGGING), not
+# secrets, but it is machine-local and must not be tracked.
+.env
+.env.*
+!.env.example
