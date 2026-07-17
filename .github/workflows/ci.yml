@@ -116,6 +116,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Node is needed for the 1A headless smoke test (Node baseline path).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install tooling
         run: pip install ruff jsonschema
 
@@ -123,7 +128,13 @@ jobs:
         run: ruff check shared/
 
       - name: Compile check
-        run: python -m py_compile shared/metrics/benchmark_runner.py shared/test-data/generate_testfile.py
+        run: python -m py_compile shared/metrics/benchmark_runner.py shared/metrics/validate_report.py shared/metrics/test_smoke.py shared/test-data/generate_testfile.py
+
+      # tgrb: one smoke test per PoC that emits stats. 1A runs for real here
+      # (Node); 3A/3B are gated by bench.yml; 1B/1C (Electron GUI) and 2A/2B
+      # (macOS) have no headless path and skip with an explicit reason.
+      - name: Smoke tests (per-PoC stats contract)
+        run: python -m unittest shared.metrics.test_smoke -v
 
       # Audit P2: the data contract must be an executable gate. Generate a small
       # corpus, run the runnable PoCs through the orchestrator (which validates

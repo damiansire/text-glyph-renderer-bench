@@ -46,6 +46,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install schema validator
+        run: pip install jsonschema
+
       # Full 100 MB corpus is unnecessary (and slow) for a CI smoke bench —
       # a 5 MB slice exercises the same code paths (shaping, atlas, line
       # index) at a fraction of the wall-clock cost.
@@ -81,6 +84,16 @@ jobs:
           cargo run --release -p poc-3b-rust-vello -- \
             --file shared/test-data/test_5mb.txt --font shared/fonts/InterVariable.ttf \
             --bench --headless --frames 200
+
+      # Smoke gate (tgrb): a bench "ran" only if it emitted a report that
+      # conforms to frame_stats.schema.json with the right poc_id. Same check
+      # the local smoke suite uses (shared/metrics/validate_report.py), so a
+      # PoC that silently stops emitting stats reds the build here.
+      - name: Validate emitted stats against schema
+        shell: bash
+        run: |
+          python3 shared/metrics/validate_report.py results/3a-rust-wgpu_stats.json 3a-rust-wgpu
+          python3 shared/metrics/validate_report.py results/3b-rust-vello_stats.json 3b-rust-vello
 
       - name: Upload results
         uses: actions/upload-artifact@v4
