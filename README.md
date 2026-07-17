@@ -12,16 +12,27 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design.
 
 ## Included PoCs
 
+The stacks split into two groups: those that **emit stats** today (a
+schema-conforming `results/<poc-id>_stats.json`) and those that do **not yet**.
+Don't read the second group as part of any comparison.
+
+### Measured stacks (emit stats)
+
+| Folder | Stack | Category | What it measures |
+|--------|-------|----------|------------------|
+| `poc-1a-web-dom` | Electron + DOM | Web Sandboxed | End-to-end scroll frames vs the 8.33 ms budget. A Node-only baseline path (`benchmarks/synthetic_scroll.js`, no DOM) also emits stats headlessly and is smoke-tested in CI. |
+| `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed | End-to-end scroll frames. Emits stats only inside the Electron GUI (`electron . --benchmark`). |
+| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | End-to-end scroll frames. Emits stats only inside the Electron GUI + a WebGPU adapter. |
+| `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | End-to-end scroll frames. macOS-only (Swift + TextKit 2). |
+| `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | End-to-end scroll frames. macOS-only (Swift + Metal 3). |
+| `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | **Real offscreen GPU render per frame** (shape → rasterize → atlas upload → single instanced draw → GPU submit) vs the 8.33 ms budget, so it *does* report a drop rate. On a GPU-less runner it writes a `gpu_available: false` report instead of fabricating timings. |
+| `poc-3b-rust-vello` | Rust + Vello | Systems | **CPU-side scene-build microbenchmark** only — encodes real glyph geometry via `Scene::draw_glyphs`, but performs no on-screen GPU render, so it deliberately reports **no** frame-budget verdict (`n/a` drop rate). |
+
+### Not yet implemented (emit no stats)
+
 | Folder | Stack | Category | Status |
 |--------|-------|----------|--------|
-| `poc-1a-web-dom` | Electron + DOM | Web Sandboxed | — |
-| `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed | — |
-| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | — |
-| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed | **not implemented** — missing `index.html` + MSDF charset; never renders nor emits stats. Skipped by the benchmark runner. |
-| `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | — |
-| `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | — |
-| `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | buffer/line-index only (no GPU render yet) |
-| `poc-3b-rust-vello` | Rust + Vello | Systems | `build_scene` now encodes real glyph geometry via `Scene::draw_glyphs` (vello 0.7's current API — the prior "GlyphProvider" it depended on was removed in vello 0.2). Covered by 3 unit tests. Actual on-screen GPU render / visual verification still pending. |
+| `poc-1d-webgpu-msdf` | WebGPU + MSDF | Web Sandboxed | **Not implemented.** The shaders, `index.html` and loader exist, but the MSDF atlas (`assets/*.png` / `*.bin`) is generated offline and gitignored, so it never renders nor emits stats. The benchmark runner skips it explicitly. **Not counted** in the measured stacks. |
 
 ## Initial Setup
 
@@ -86,13 +97,23 @@ schema as it aggregates them: a non-conforming report is a hard failure, not a
 silent pass. All PoCs write into a single canonical directory (`results/`),
 which the runner passes to each via the `BENCH_RESULTS_DIR` environment variable.
 
-The Rust PoCs (3A/3B) are microbenchmarks that deliberately do **not** report a
-frame-budget verdict (they measure line-index traversal / CPU scene build only);
-their rows show `n/a` for the drop rate so the table never implies a comparison
-they did not measure.
+PoC **3B** is a CPU-side microbenchmark that deliberately does **not** report a
+frame-budget verdict (it measures Vello scene-build only); its row shows `n/a`
+for the drop rate so the table never implies a comparison it did not measure.
+PoC **3A**, by contrast, now runs a real offscreen GPU render per frame and
+**does** report a drop rate against the 8.33 ms budget — except on a GPU-less
+runner, where it writes a `gpu_available: false` report and no timing numbers.
 
 ## Statistical Methodology
 
+- **Hardware & single-machine caveat**: every number published in this README
+  was measured on a **single machine** (Apple Silicon, macOS 14+ — see System
+  Requirements). There is no multi-device sample and no averaging across
+  machines, so treat all comparisons as single-machine, single-configuration
+  and not a cross-hardware ranking. The cross-platform CI (`bench.yml`) runs the
+  Rust PoCs on hosted ubuntu/windows/macOS runners as a *compile-and-run sanity
+  check only* — those runners often expose no GPU adapter (`gpu_available:
+  false`), so their numbers are not publishable benchmark results.
 - **Runs per PoC**: each implemented PoC's `benchmark_runner.py` invocation
   aggregates a full scroll pass over `test_100mb.txt` into a single
   `results/<poc-id>_stats.json` (see `frame_stats.schema.json`) — one

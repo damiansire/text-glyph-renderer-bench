@@ -235,13 +235,15 @@ def poc_id_to_schema_id(poc_id: str) -> str:
 def extract_metrics(poc_id: str, data: dict) -> dict:
     """Extract comparable metrics from any PoC result JSON.
 
-    Audit P1/P6: PoCs emit two distinct shapes. End-to-end PoCs (1a/1b/1c)
-    emit a `benchmark` block with percentiles already in ms. The Rust
-    microbenchmarks (3a/3b) deliberately do NOT report a frame-budget verdict;
-    they emit microbench blocks in µs (3a: `line_index_traversal`, 3b:
-    `scene_build`). We normalise both into the same row, converting µs→ms, and
-    leave drop_rate as 'n/a' for the microbenchmarks so the table never implies
-    a frame-budget comparison they did not measure.
+    Audit P1/P6: PoCs emit two distinct shapes. End-to-end PoCs (1a/1b/1c and
+    now 3a — which runs a real offscreen GPU render per frame, tgrb-4) emit a
+    `benchmark` block with percentiles already in ms. PoC 3b is a CPU
+    microbenchmark that deliberately does NOT report a frame-budget verdict; it
+    emits a `scene_build` block in µs. We normalise both into the same row,
+    converting µs→ms, and leave drop_rate as 'n/a' for the microbenchmark so the
+    table never implies a frame-budget comparison it did not measure. The legacy
+    3a `line_index_traversal` shape (pre-tgrb-4) is still accepted below for
+    backward-compatibility with older reports.
     """
     label    = POCS[poc_id]["label"]
     category = POCS[poc_id]["category"]
