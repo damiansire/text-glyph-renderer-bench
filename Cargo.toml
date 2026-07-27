@@ -47,19 +47,19 @@ memchr     = "2.7"
 wgpu       = { version = "22", features = ["metal"] }
 
 # Font / shaping
-harfbuzz-sys = "0.5"
-rustybuzz    = "0.14"          # pure-Rust HarfBuzz port (no C dep) — swap for harfbuzz-sys if needed
+rustybuzz    = "0.14"          # pure-Rust HarfBuzz port (no C dep)
 ttf-parser   = "0.21"
 
 # Collections / cache
 lru        = "0.12"
 
 # Serialization
-serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Benchmarking
 criterion  = { version = "0.5", features = ["html_reports"] }
 
-# Windowing (for PoC 3A/3B standalone window)
-winit      = "0.29"
+# Sin harfbuzz-sys / serde / winit: ningun crate del workspace los consumia.
+# 3A shapea con rustybuzz, ambos PoCs serializan con serde_json (que trae su
+# propio serde), y no hay camino con ventana (3A renderiza a textura offscreen
+# y 3B es un microbench de CPU headless).
