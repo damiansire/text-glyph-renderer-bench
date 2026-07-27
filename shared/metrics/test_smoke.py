@@ -245,6 +245,76 @@ class RustPocsSmoke(unittest.TestCase):
         )
 
 
+class ComparisonSemantics(unittest.TestCase):
+    """CLAUDE.md's heart rule: distinct measurement semantics (CPU encode,
+    end-to-end frame, CPU scene build) never share a column. The aggregated
+    comparison.md used to put every row in one table regardless of the
+    `measures` each report declares; these tests pin the sectioned output."""
+
+    def _rows(self) -> list[dict]:
+        import benchmark_runner as br
+
+        encode = dict(
+            _END_TO_END,
+            poc_id="1c-webgpu-atlas",
+            measures="cpu-encode-only (timer stops at queue.submit, no GPU completion wait)",
+        )
+        return [
+            br.extract_metrics("1a", _END_TO_END),
+            br.extract_metrics("1c", encode),
+            br.extract_metrics("3b", _SCENE_BUILD),
+        ]
+
+    def test_extract_metrics_propagates_declared_measures(self) -> None:
+        rows = self._rows()
+        self.assertEqual(rows[0]["measures"], "end-to-end-frame")
+        self.assertTrue(rows[1]["measures"].startswith("cpu-encode-only"))
+        self.assertEqual(rows[2]["measures"], "cpu-scene-build-only")
+
+    def test_markdown_gives_each_semantics_its_own_section(self) -> None:
+        import benchmark_runner as br
+
+        out = Path(_TMP.name) / "comparison-sections.md"  # type: ignore[union-attr]
+        br.write_markdown(self._rows(), out, _CORPUS)
+        text = out.read_text(encoding="utf-8")
+        sections = text.split("\n## ")[1:]
+        self.assertEqual(len(sections), 3, f"expected 3 semantics sections in:\n{text}")
+        # The end-to-end section leads and holds ONLY the end-to-end row; the
+        # CPU-encode and scene-build rows live in their own tables.
+        self.assertIn("End-to-end", sections[0])
+        self.assertIn("PoC 1A", sections[0])
+        self.assertNotIn("PoC 1C", sections[0])
+        self.assertNotIn("PoC 3B", sections[0])
+        rest = "".join(sections[1:])
+        self.assertIn("PoC 1C", rest)
+        self.assertIn("PoC 3B", rest)
+
+    def test_markdown_header_declares_the_real_corpus_not_100mb(self) -> None:
+        import benchmark_runner as br
+
+        out = Path(_TMP.name) / "comparison-header.md"  # type: ignore[union-attr]
+        br.write_markdown(self._rows(), out, _CORPUS)
+        text = out.read_text(encoding="utf-8")
+        # The artifact must describe the corpus it actually measured (name,
+        # size, SHA-256 anchor), not hardcode the canonical 100 MB target.
+        self.assertIn(_CORPUS.name, text)  # type: ignore[union-attr]
+        self.assertIn(br.sha256_of(_CORPUS), text)
+        self.assertNotIn("100 MB", text)
+
+
+class CorpusSidecar(unittest.TestCase):
+    def test_sidecar_line_count_matches_the_file(self) -> None:
+        # generate_line() returns multi-line records (the CODE_SNIPPETS pool),
+        # so counting records undercounted the real lines ~3x in the sidecar
+        # that documents the corpus anchoring every measurement.
+        import json
+
+        meta = json.loads(
+            _CORPUS.with_suffix(".meta.json").read_text(encoding="utf-8")  # type: ignore[union-attr]
+        )
+        self.assertEqual(meta["lines"], _CORPUS.read_bytes().count(b"\n"))  # type: ignore[union-attr]
+
+
 class NotImplementedContract(unittest.TestCase):
     def test_1d_webgpu_msdf_is_declared_not_implemented(self) -> None:
         # 1d intentionally emits no stats; the runner must keep skipping it

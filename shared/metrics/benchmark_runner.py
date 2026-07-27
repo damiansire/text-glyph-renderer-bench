@@ -12,7 +12,8 @@ Prerequisites:
     - test_100mb.txt generated (run: python3 shared/test-data/generate_testfile.py)
     - Node.js 20+   (for PoCs 1A–1D)
     - Xcode 15+     (for PoCs 2A, 2B: swift build)
-    - Rust 1.78+    (for PoCs 3A, 3B: cargo build)
+    - Rust 1.92+    (for PoCs 3A, 3B: cargo build; the workspace MSRV in the
+      root Cargo.toml is the single source of truth)
     - npm packages installed in each poc-1* directory
     - `jsonschema` (pip install jsonschema): the report gate is fail-closed, so
       without it the run aborts instead of publishing unvalidated numbers.
@@ -29,6 +30,7 @@ Exit codes:
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import subprocess
@@ -85,10 +87,11 @@ POCS = {
         "result_file": RESULTS_DIR / "1d-webgpu-msdf_stats.json",
         "schema_id": "1d-webgpu-msdf",
         "category": "Web",
-        # Audit P4: 1D has no index.html and no charset; it never renders nor
-        # emits stats. Marked not-implemented so the orchestrator skips it
-        # instead of reporting a spurious "result file not found".
-        "not_implemented": "missing index.html + MSDF charset (see README)",
+        # Audit P4: 1D never emits stats, so the orchestrator skips it instead
+        # of reporting a spurious "result file not found". The real gap: the
+        # MSDF atlas (assets/inter_msdf_atlas.*) is generated offline and
+        # gitignored; the shaders, index.html and loader do exist (see README).
+        "not_implemented": "MSDF atlas is generated offline and gitignored (see README)",
     },
     "2a": {
         "label": "PoC 2A — TextKit 2 (Swift)",
@@ -215,6 +218,7 @@ def extract_metrics(poc_id: str, data: dict) -> dict:
         mb = data["line_index_traversal"]
         return {
             "poc_id": poc_id, "label": label, "category": category,
+            "measures": data.get("measures", "cpu-line-index-traversal-only"),
             "line_count": data.get("file_lines", "?"),
             "load_ms": data.get("load_ms", "?"),
             "total_frames": mb.get("total_iters", "?"),
@@ -229,6 +233,7 @@ def extract_metrics(poc_id: str, data: dict) -> dict:
         file_info = data.get("file", {})
         return {
             "poc_id": poc_id, "label": label, "category": category,
+            "measures": data.get("measures", "cpu-scene-build-only"),
             "line_count": file_info.get("line_count", "?"),
             "load_ms": file_info.get("load_ms", "?"),
             "total_frames": mb.get("total_iters", "?"),
@@ -247,6 +252,7 @@ def extract_metrics(poc_id: str, data: dict) -> dict:
         "poc_id":          poc_id,
         "label":           label,
         "category":        category,
+        "measures":        data.get("measures", "end-to-end-frame"),
         "line_count":      file_info.get("line_count", "?"),
         "load_ms":         file_info.get("load_ms", "?"),
         "total_frames":    bench.get("total_frames", "?"),
@@ -259,24 +265,81 @@ def extract_metrics(poc_id: str, data: dict) -> dict:
     }
 
 
-def write_markdown(rows: list[dict], out_path: Path) -> None:
+def sha256_of(path: Path) -> str:
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+# The heart rule of this repo (CLAUDE.md, "Contrato de medición"): distinct
+# measurement semantics never share a column. Each PoC declares what it measures
+# in its report's `measures` field; the first token maps to a table section
+# here. An unknown token gets a section of its own instead of being silently
+# ranked against the end-to-end rows (fail-closed, same posture as the report
+# gate).
+_END_TO_END_SECTION = "End-to-end frame vs the 8.33 ms budget"
+_SEMANTICS_SECTIONS = {
+    "end-to-end-frame": _END_TO_END_SECTION,
+    "real-gpu-render": _END_TO_END_SECTION,
+    "cpu-encode-only": "CPU encode only (timer stops at submit; no GPU completion)",
+    "cpu-scene-build-only": "CPU scene build microbenchmark (no frames presented)",
+    "cpu-line-index-traversal-only": (
+        "CPU line-index traversal microbenchmark (no frames presented)"
+    ),
+}
+
+
+def semantics_section(measures: str) -> str:
+    """Map a report's declared `measures` to the comparison section it belongs to."""
+    token = measures.split(" ", 1)[0].split("(", 1)[0]
+    return _SEMANTICS_SECTIONS.get(
+        token, f"Undeclared semantics `{token}` (not comparable to any other section)"
+    )
+
+
+def write_markdown(rows: list[dict], out_path: Path, corpus: Path) -> None:
     headers = ["PoC", "Category", "Load ms", "P50 ms", "P95 ms", "P99 ms", "Dropped", "Drop %"]
+    corpus_mb = corpus.stat().st_size / 1_048_576
     lines = [
         "# Text Engine PoC — Benchmark Comparison",
         f"Generated: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
-        "Test file: 100 MB, seed=42 | Frame budget: 8.33 ms (120 Hz) | Scroll: 60px/frame",
+        # The header states the corpus this run actually measured, not the
+        # canonical 100 MB target: the e2e CI gate runs over a 1 MB corpus and
+        # its artifact must not claim otherwise. The SHA-256 is the
+        # reproducibility anchor (rule l of the repo standard).
+        f"Test file: {corpus.name} ({corpus_mb:.2f} MB), SHA-256 {sha256_of(corpus)}",
+        "Frame budget: 8.33 ms (120 Hz) | Scroll: 60 px/frame",
         "",
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join(["---"] * len(headers)) + " |",
+        "Each section aggregates one measurement semantics (the `measures` field",
+        "each PoC declares in its report). Rows in different sections measure",
+        "different things and must not be ranked against each other.",
     ]
+
+    sections: dict[str, list[dict]] = {}
     for r in rows:
-        def f(v): return f"{v:.2f}" if isinstance(v, float) else str(v)
-        lines.append(
-            f"| {r['label']} | {r['category']} | {f(r['load_ms'])} | "
-            f"{f(r['p50_ms'])} | {f(r['p95_ms'])} | {f(r['p99_ms'])} | "
-            f"{r['dropped_frames']} | {f(r['drop_rate_pct'])} |"
-        )
-    lines += ["", "> Budget: 8.33ms · Dropped = frames > budget"]
+        sections.setdefault(semantics_section(r["measures"]), []).append(r)
+    # Stable order with the end-to-end section first: it is the headline
+    # comparison; microbenchmarks and CPU-only rows follow as context.
+    ordered = sorted(sections.items(), key=lambda kv: kv[0] != _END_TO_END_SECTION)
+
+    for section, section_rows in ordered:
+        lines += [
+            "",
+            f"## {section}",
+            "",
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join(["---"] * len(headers)) + " |",
+        ]
+        for r in section_rows:
+            def f(v): return f"{v:.2f}" if isinstance(v, float) else str(v)
+            lines.append(
+                f"| {r['label']} | {r['category']} | {f(r['load_ms'])} | "
+                f"{f(r['p50_ms'])} | {f(r['p95_ms'])} | {f(r['p99_ms'])} | "
+                f"{r['dropped_frames']} | {f(r['drop_rate_pct'])} |"
+            )
+    lines += ["", "> Budget: 8.33 ms · Dropped = frames > budget (end-to-end section only)"]
     out_path.write_text("\n".join(lines))
 
 
@@ -345,7 +408,7 @@ if __name__ == "__main__":
     csv_path = RESULTS_DIR / "comparison.csv"
     md_path  = RESULTS_DIR / "comparison.md"
     write_csv(rows, csv_path)
-    write_markdown(rows, md_path)
+    write_markdown(rows, md_path, test_file)
 
     print(f"\n{'='*60}")
     print("BENCHMARK COMPLETE")
