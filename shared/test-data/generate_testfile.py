@@ -296,7 +296,11 @@ def generate_testfile(output_path: Path, target_mb: int = 100, seed: int = 42) -
             f.write(line + "\n")
             sha.update(line_bytes)
             written += len(line_bytes)
-            lines_written += 1
+            # Un registro puede ser multilínea (los CODE_SNIPPETS traen \n
+            # embebidos), así que se cuentan los saltos de línea reales del
+            # archivo, no los registros generados: el sidecar documenta el
+            # corpus que ancla las mediciones y subcontaba ~3x.
+            lines_written += line.count("\n") + 1
 
             if lines_written % 100_000 == 0:
                 pct = min(100, 100 * written / target_bytes)
