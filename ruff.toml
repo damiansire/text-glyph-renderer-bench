@@ -1,0 +1,18 @@
+# Config de ruff para el orquestador y los scripts de datos (todo `shared/`).
+# Saqueo: refs/python/from-consensus-2026-07-16.md — "ruff con allowlist EXPLICITA
+# de familias, nunca ALL ni defaults implicitos" (httpx, FastAPI, polars).
+# Vive en `ruff.toml` y no en `pyproject.toml` porque el repo no es un paquete
+# Python: es un monorepo Rust/JS/Swift con Python en el harness.
+
+# Piso del ecosistema: el repo declara Python 3.11+ en el README.
+target-version = "py311"
+
+[lint]
+# Nucleo comun del tier top: errores (E), pyflakes (F), orden de imports (I),
+# bugbear (B). Superficie chica y un solo mantenedor: allowlist angosta y
+# deliberada (httpx elige 5 familias), no las ~27 de polars.
+select = ["E", "F", "I", "B"]
+
+# Largo de linea: lo maneja el formatter (`ruff format`), no el linter.
+# Mismo criterio explicito que FastAPI y polars ("handled by black").
+ignore = ["E501"]

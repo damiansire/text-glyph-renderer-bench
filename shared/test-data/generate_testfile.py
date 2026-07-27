@@ -19,9 +19,9 @@ Uso:
 Seed: 42 (siempre produce el mismo archivo)
 """
 
-import random
 import argparse
 import hashlib
+import random
 import sys
 import time
 from pathlib import Path

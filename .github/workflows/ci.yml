@@ -124,7 +124,10 @@ jobs:
           node-version: 20
 
       - name: Install tooling
-        run: pip install ruff jsonschema
+        # ruff pineado: un linter sin pinear cambia de reglas solo y pone el gate
+        # en rojo sin que nadie haya tocado el repo. 0.15.18 es la version contra
+        # la que se verifico verde la config de `ruff.toml`.
+        run: pip install ruff==0.15.18 jsonschema
 
       - name: Lint (ruff)
         run: ruff check shared/

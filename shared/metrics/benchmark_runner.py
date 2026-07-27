@@ -20,13 +20,13 @@ Output:
     results/comparison.md
 """
 
-import subprocess
+import argparse
+import csv
 import json
 import os
+import subprocess
 import sys
-import csv
 import time
-import argparse
 from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────────

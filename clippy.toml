@@ -1,0 +1,15 @@
+# Config de clippy del workspace.
+# Saqueo: rerun-io/rerun_template (clippy.toml) via refs/rust/from-rerun-io-rerun_template.md.
+# Complementa `[workspace.lints]` del Cargo.toml raiz: alla viven las lints,
+# aca los thresholds y las prohibiciones con nombre.
+
+# En sync con `[workspace.package] rust-version` (fuente unica de verdad del MSRV):
+# clippy no sugiere APIs mas nuevas que el MSRV declarado.
+msrv = "1.92"
+
+# Los PoC de bench desempacan a proposito en sus tests; el codigo de libreria no.
+allow-unwrap-in-tests = true
+
+# `dbg!` es debug olvidado, nunca codigo entregable (ya cubierto por
+# clippy::dbg_macro en el workspace; aca queda tambien como prohibicion nombrada).
+disallowed-macros = ["std::dbg"]
