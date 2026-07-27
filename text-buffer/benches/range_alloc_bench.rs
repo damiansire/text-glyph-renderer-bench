@@ -17,7 +17,7 @@
 //! Las funciones de producción NO se modifican: este bench solo las invoca.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use poc_3a_rust_wgpu::{PieceTable, TextBuffer};
+use text_buffer::{PieceTable, TextBuffer};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

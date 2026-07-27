@@ -1,8 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use poc_3b_rust_vello::{LineIndex, PieceTable, TextBuffer};
+use text_buffer::{LineIndex, PieceTable, TextBuffer};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Generate a synthetic text buffer similar to source code.
+/// `lines` × ~80 bytes per line.
 fn gen_text(lines: usize) -> Vec<u8> {
     let mut out = Vec::with_capacity(lines * 82);
     for i in 0..lines {
@@ -38,6 +40,7 @@ fn bench_line_index_byte_to_line(c: &mut Criterion) {
     for lines in [1_000, 100_000, 1_300_000] {
         let data = gen_text(lines);
         let idx = LineIndex::build(&data);
+        // Query the middle of the buffer
         let mid_byte = data.len() / 2;
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{lines}L")),
@@ -55,6 +58,8 @@ fn bench_line_index_line_range_offsets(c: &mut Criterion) {
     let data = gen_text(1_300_000);
     let idx = LineIndex::build(&data);
     let total = idx.count();
+
+    // Simulate a 60-line viewport at mid-scroll
     let first = total / 2;
     let last = (first + 60).min(total);
 
@@ -96,6 +101,7 @@ fn bench_piece_table_insert(c: &mut Criterion) {
                 b.iter_batched(
                     || PieceTable::from_bytes(data.clone()).unwrap(),
                     |mut pt| {
+                        // Insert at the middle of the buffer
                         let mid = pt.byte_len() / 2;
                         pt.insert(black_box(mid), black_box("hello\n"));
                         pt
@@ -120,6 +126,7 @@ fn bench_piece_table_delete(c: &mut Criterion) {
                 b.iter_batched(
                     || PieceTable::from_bytes(data.clone()).unwrap(),
                     |mut pt| {
+                        // Delete 10 bytes at the middle
                         let mid = pt.byte_len() / 2;
                         pt.delete(black_box(mid..mid + 10));
                         pt
@@ -139,6 +146,7 @@ fn bench_piece_table_bytes_in_range(c: &mut Criterion) {
         let data = gen_text(lines);
         let pt = PieceTable::from_bytes(data).unwrap();
         let total = pt.byte_len();
+        // Simulate reading a 60-line viewport (~4800 bytes at 80 bytes/line)
         let viewport_bytes = 60 * 82;
         let start = total / 2;
         let end = (start + viewport_bytes).min(total);

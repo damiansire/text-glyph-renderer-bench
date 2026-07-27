@@ -16,5 +16,19 @@ path = "src/lib.rs"
 memmap2 = { workspace = true }
 memchr  = { workspace = true }
 
+[dev-dependencies]
+criterion = { workspace = true }
+
+# The benches of this crate live in this crate. They used to be copy-pasted into
+# both consumers (3A and 3B), which is the duplication this crate exists to
+# remove, and the two copies had already started to drift apart.
+[[bench]]
+name = "buffer_bench"
+harness = false
+
+[[bench]]
+name = "range_alloc_bench"
+harness = false
+
 [lints]
 workspace = true

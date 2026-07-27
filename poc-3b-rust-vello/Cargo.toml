@@ -20,29 +20,24 @@ path = "src/lib.rs"
 # Shared text buffer (piece table + line index), consumed by 3A and 3B alike.
 text-buffer = { path = "../text-buffer" }
 
-# Vello: GPU-first vector renderer (Compute Shaders, no texture atlas)
-# TODO(repro): pinear a un rev/tag concreto en vez de branch="main" para builds reproducibles
-vello = { git = "https://github.com/linebender/vello", branch = "main" }
+# Vello: GPU-first vector renderer (Compute Shaders, no texture atlas).
+# Pineado al rev exacto que ya fija el Cargo.lock: una `branch = "main"` de un
+# repo de terceros hace que cualquier resolucion fuera del lock traiga codigo
+# distinto y los numeros dejen de ser reproducibles.
+vello = { git = "https://github.com/linebender/vello", rev = "ea2a935ec79206fb5dd3d367ac8feb79bffc905b" }
 
-# Shared workspace deps
-memmap2    = { workspace = true }
-memchr     = { workspace = true }
-wgpu       = { workspace = true }
-winit      = { workspace = true }
-serde      = { workspace = true }
+# Shared workspace deps. 3B accede al texto por el crate `text-buffer` (que
+# encapsula mmap y memchr) y parsea la fuente con skrifa, asi que NO declara
+# memmap2/memchr/ttf-parser. Tampoco wgpu ni winit: arrastraban una segunda pila
+# GPU entera (wgpu 22 + naga 22) que este binario nunca toca, encima de la
+# wgpu 28 que Vello si necesita.
 serde_json = { workspace = true }
 
-# Font parsing (Vello uses kurbo for geometry; ttf-parser for font data)
-ttf-parser = { workspace = true }
-skrifa     = "0.19"   # Google's OpenType font reading library used by Vello internally
+# Font parsing: skrifa es la libreria OpenType que Vello usa internamente.
+skrifa     = "0.19"
 
 [dev-dependencies]
-criterion = { workspace = true }
 font-test-data = "0.4.1"
-
-[[bench]]
-name = "buffer_bench"
-harness = false
 
 [lints]
 workspace = true

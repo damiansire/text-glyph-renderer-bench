@@ -30,12 +30,23 @@ use rendering::renderer::{
     build_glyph_instances, GlyphRenderer, GpuContext, VIEWPORT_H, VIEWPORT_W,
 };
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// 120 Hz frame budget, in microseconds. A frame slower than this is a dropped
 /// frame against a 120 Hz target.
 const FRAME_BUDGET_US: u64 = 8_333;
+
+/// Default corpus font, anchored to the crate directory instead of the process
+/// working directory.
+///
+/// The orchestrator (`shared/metrics/benchmark_runner.py`) launches this binary
+/// with `cwd` = repo root and without `--font`, so a CWD-relative default
+/// resolved to `<repo>/../shared/fonts/...`, i.e. outside the repo, and the PoC
+/// died reading the font on any machine that actually had a GPU adapter.
+fn default_font_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/fonts/InterVariable.ttf")
+}
 
 // ── CLI args ─────────────────────────────────────────────────────────────────
 
@@ -52,7 +63,7 @@ struct Args {
 impl Args {
     fn parse() -> Self {
         let mut file = None;
-        let mut font = PathBuf::from("../shared/fonts/InterVariable.ttf");
+        let mut font = default_font_path();
         let mut font_size_px = 13.0_f32;
         let mut bench = false;
         let mut scroll_frames: u32 = 3600; // 30 s at 120 Hz
@@ -303,9 +314,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "poc_id": "3a-rust-wgpu",
             "measures": "real-gpu-render (shape+rasterize+atlas-upload+gpu-submit)",
             "gpu_available": false,
-            "file_bytes": pt.byte_len(),
-            "file_lines": pt.line_count(),
-            "load_ms": load_ms,
+            // Canonical `file` block of frame_stats.schema.json. These used to
+            // be flat top-level keys, which the aggregator (reading
+            // `data["file"]`) silently turned into "?" in the comparison table.
+            "file": {
+                "line_count": pt.line_count(),
+                "load_ms": load_ms,
+                "byte_count": pt.byte_len(),
+            },
         });
         std::fs::write(&out_path, serde_json::to_string_pretty(&result)?)?;
         println!("{}", serde_json::to_string_pretty(&result)?);
@@ -380,6 +396,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Smoke check: {ink_pixels} non-background pixels in the readback \
          (confirms the GPU frame contains real glyph ink)."
     );
+    // A readback with zero ink means the GPU path produced no glyphs, i.e. the
+    // frame timings below measured an empty render. Printing that and exiting 0
+    // published the numbers anyway; it has to be a gate.
+    if ink_pixels == 0 {
+        eprintln!(
+            "error: the GPU readback contains no glyph ink — the render path \
+             produced an empty frame, so the timings would be meaningless."
+        );
+        std::process::exit(1);
+    }
 
     // ── Output results as JSON (schema: shared/metrics/frame_stats.schema.json) ─
     let result = serde_json::json!({
@@ -388,9 +414,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "gpu_available": true,
         "gpu_backend": format!("{:?}", ctx.backend),
         "gpu_adapter": ctx.adapter_name,
-        "file_bytes": pt.byte_len(),
-        "file_lines": pt.line_count(),
-        "load_ms": load_ms,
+        // Canonical `file` block of frame_stats.schema.json (same shape 1A/3B
+        // emit); the aggregator reads load/line metrics from here.
+        "file": {
+            "line_count": pt.line_count(),
+            "load_ms": load_ms,
+            "byte_count": pt.byte_len(),
+        },
+        // Evidence that the timed frames rendered real ink, carried in the
+        // artifact instead of only in stdout.
+        "ink_pixels": ink_pixels,
         "benchmark": {
             "total_frames": stats.total_iters,
             "dropped_frames": stats.dropped_frames,
@@ -416,4 +449,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nResults written to {}", out_path);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_font_path;
+
+    /// The orchestrator invokes this binary from the repo root without
+    /// `--font`, so the default must resolve to the real font regardless of the
+    /// working directory. The previous CWD-relative default pointed outside the
+    /// repo and made the PoC exit non-zero on every machine with a GPU.
+    #[test]
+    fn default_font_path_resolves_to_a_real_file() {
+        let path = default_font_path();
+        assert!(
+            path.is_file(),
+            "default font path does not resolve to a file: {}",
+            path.display()
+        );
+    }
 }

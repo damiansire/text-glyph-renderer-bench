@@ -31,16 +31,11 @@ lru         = { workspace = true }
 pollster    = "0.3"
 
 [dev-dependencies]
-criterion       = { workspace = true }
 font-test-data  = "0.4.1"
 
-[[bench]]
-name = "buffer_bench"
-harness = false
-
-[[bench]]
-name = "range_alloc_bench"
-harness = false
+# Sin `[[bench]]`: `buffer_bench` y `range_alloc_bench` miden APIs de
+# `text-buffer` y viven en ese crate. Aca solo van benches de lo que 3A aporta
+# (atlas / shaping).
 
 [lints]
 workspace = true

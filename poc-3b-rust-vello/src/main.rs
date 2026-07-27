@@ -20,8 +20,16 @@ mod rendering;
 use poc_3b_rust_vello::{PieceTable, TextBuffer};
 use rendering::scene_builder::{TextSceneBuilder, VelloFont};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+/// Defaults anchored to the crate directory instead of the process working
+/// directory: the orchestrator (`shared/metrics/benchmark_runner.py`) runs this
+/// binary with `cwd` = repo root, where a CWD-relative `../shared/...` default
+/// resolves outside the repo and the PoC dies loading the font.
+fn crate_relative(rest: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(rest)
+}
 
 struct Args {
     file: PathBuf,
@@ -36,8 +44,8 @@ struct Args {
 impl Args {
     fn parse() -> Self {
         let mut args = Self {
-            file: PathBuf::from("../shared/test-data/test_100mb.txt"),
-            font: PathBuf::from("../shared/fonts/InterVariable.ttf"),
+            file: crate_relative("../shared/test-data/test_100mb.txt"),
+            font: crate_relative("../shared/fonts/InterVariable.ttf"),
             bench: false,
             scroll_frames: 3600,
             scroll_px: 60.0,
@@ -77,6 +85,58 @@ impl Args {
     }
 }
 
+/// Build the run report in the canonical `frame_stats.schema.json` shape.
+///
+/// Takes `load_ms` as an already-measured value on purpose: the metric it
+/// publishes is the corpus load, so it must not be derivable from anything this
+/// function can still observe (that is exactly how the loop time ended up
+/// reported as load time).
+///
+/// No `dropped_frames` / `drop_rate_pct` / 8.33 ms comparison: this loop only
+/// exercises the CPU scene build, not an end-to-end render frame. Sorts
+/// `iter_times_us` in place and guards the empty case (`--frames 0`), where the
+/// percentile indexing would panic and `avg` divide by zero (audit P5).
+fn build_report(
+    line_count: usize,
+    load_ms: u128,
+    total_iters: u32,
+    iter_times_us: &mut [u64],
+) -> serde_json::Value {
+    iter_times_us.sort_unstable();
+    let n = iter_times_us.len();
+    let p = |pct: usize| {
+        if n == 0 {
+            0
+        } else {
+            iter_times_us[(n * pct / 100).min(n - 1)]
+        }
+    };
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "iteration counts and microsecond timings are far below f64's exact-integer range"
+    )]
+    let avg: f64 = if n == 0 {
+        0.0
+    } else {
+        iter_times_us.iter().map(|&v| v as f64).sum::<f64>() / n as f64
+    };
+
+    serde_json::json!({
+        "poc_id": "3b-rust-vello",
+        "measures": "cpu-scene-build-only (real glyph geometry, no raster/gpu submission)",
+        "file": { "line_count": line_count, "load_ms": load_ms },
+        "scene_build": {
+            "total_iters": total_iters,
+            "p50_us": p(50), "p95_us": p(95), "p99_us": p(99),
+            "p50_ms": p(50) as f64 / 1000.0,
+            "p95_ms": p(95) as f64 / 1000.0,
+            "p99_ms": p(99) as f64 / 1000.0,
+            "avg_us": avg,
+            "note": "headless: CPU scene build with real glyph geometry (draw_glyphs); excludes GPU submission",
+        }
+    })
+}
+
 #[allow(
     clippy::cast_possible_truncation,
     reason = "bench scaffolding: scroll->line index is a deliberate floor and elapsed micros fit in u64"
@@ -88,13 +148,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("File: {}", args.file.display());
 
     // ── Load text file ─────────────────────────────────────────────────────
+    // The elapsed time is frozen HERE. Reading `t_load.elapsed()` later (down in
+    // the report) measured load + the whole benchmark loop and published it as
+    // `file.load_ms`: 3233 ms for a 1 MB mmap, three orders of magnitude off.
     let t_load = Instant::now();
     let pt = PieceTable::from_file(&args.file)?;
+    let load_ms = t_load.elapsed().as_millis();
     println!(
-        "Loaded {} MB, {} lines in {:.1}ms",
+        "Loaded {} MB, {} lines in {}ms",
         pt.byte_len() / 1_048_576,
         pt.line_count(),
-        t_load.elapsed().as_secs_f64() * 1000.0
+        load_ms
     );
 
     if !args.bench {
@@ -199,39 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── Results ─────────────────────────────────────────────────────────────
-    // No `dropped_frames` / `drop_rate_pct` / 8.33 ms comparison: this loop
-    // only exercises the CPU scene build, not an end-to-end render frame.
-    // Guard the empty case (`--frames 0`): empty `iter_times_us` would make the
-    // percentile indexing panic and `avg` divide by zero (audit P5).
-    iter_times_us.sort_unstable();
-    let n = iter_times_us.len();
-    let p = |pct: usize| {
-        if n == 0 {
-            0
-        } else {
-            iter_times_us[(n * pct / 100).min(n - 1)]
-        }
-    };
-    let avg: f64 = if n == 0 {
-        0.0
-    } else {
-        iter_times_us.iter().map(|&v| v as f64).sum::<f64>() / n as f64
-    };
-
-    let result = serde_json::json!({
-        "poc_id": "3b-rust-vello",
-        "measures": "cpu-scene-build-only (real glyph geometry, no raster/gpu submission)",
-        "file": { "line_count": line_count, "load_ms": t_load.elapsed().as_millis() },
-        "scene_build": {
-            "total_iters": args.scroll_frames,
-            "p50_us": p(50), "p95_us": p(95), "p99_us": p(99),
-            "p50_ms": p(50) as f64 / 1000.0,
-            "p95_ms": p(95) as f64 / 1000.0,
-            "p99_ms": p(99) as f64 / 1000.0,
-            "avg_us": avg,
-            "note": "headless: CPU scene build with real glyph geometry (draw_glyphs); excludes GPU submission",
-        }
-    });
+    let result = build_report(line_count, load_ms, args.scroll_frames, &mut iter_times_us);
 
     // Audit P1: write into the directory the orchestrator points us at
     // (BENCH_RESULTS_DIR = absolute ROOT/results); fall back to a local
@@ -244,4 +276,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nResults → {}", out);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_report, crate_relative};
+
+    /// Regression for the metric that was three orders of magnitude wrong:
+    /// `file.load_ms` published the whole benchmark loop instead of the corpus
+    /// load. The report must carry the load measurement it was given, no matter
+    /// how expensive the iterations were.
+    #[test]
+    fn report_load_ms_is_the_load_measurement_not_the_loop() {
+        let mut iters = vec![54_000_u64; 50]; // 50 iterations of ~54 ms each.
+        let report = build_report(17_955, 7, 50, &mut iters);
+
+        let load_ms = report["file"]["load_ms"].as_u64().expect("load_ms");
+        assert_eq!(load_ms, 7, "load_ms must be the measured load time");
+
+        let loop_ms: u64 = iters.iter().sum::<u64>() / 1000;
+        assert!(
+            load_ms < loop_ms,
+            "load_ms ({load_ms}) cannot exceed the loop time ({loop_ms}); \
+             that is the symptom of timing the loop instead of the load"
+        );
+    }
+
+    #[test]
+    fn report_handles_zero_iterations_without_panicking() {
+        let mut iters: Vec<u64> = Vec::new();
+        let report = build_report(0, 0, 0, &mut iters);
+        assert_eq!(report["scene_build"]["p99_us"].as_u64(), Some(0));
+        assert_eq!(report["scene_build"]["avg_us"].as_f64(), Some(0.0));
+    }
+
+    /// The orchestrator runs this binary from the repo root without `--font`,
+    /// so the defaults must not depend on the working directory.
+    #[test]
+    fn default_font_resolves_to_a_real_file() {
+        let path = crate_relative("../shared/fonts/InterVariable.ttf");
+        assert!(
+            path.is_file(),
+            "default font path does not resolve to a file: {}",
+            path.display()
+        );
+    }
 }
