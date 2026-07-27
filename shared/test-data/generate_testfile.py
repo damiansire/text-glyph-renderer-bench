@@ -255,6 +255,23 @@ def generate_line(rng: random.Random) -> str:
         return segment
 
 
+# SHA-256 canónica del corpus por tamaño, con la seed por defecto (42).
+# Verificado idéntico entre corridas, con PYTHONHASHSEED distinto y contra el
+# meta generado un mes antes en otra máquina. Es el ancla externa: sin esto
+# `--verify` se comparaba contra un sidecar que él mismo había escrito.
+EXPECTED_SHA256: dict[int, str] = {
+    1: "fa1ec26a00c2c62a2c609f2954b636d3bef16f2ce81e81faa791d69fa8889c55",
+}
+
+
+def sha256_of(path: Path) -> str:
+    sha = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
 def generate_testfile(output_path: Path, target_mb: int = 100, seed: int = 42) -> None:
     rng = random.Random(seed)
     target_bytes = target_mb * 1024 * 1024
@@ -314,7 +331,24 @@ def generate_testfile(output_path: Path, target_mb: int = 100, seed: int = 42) -
     print(f"  Metadata:  {meta_path}")
 
 
-def verify_file(path: Path) -> None:
+def verify_file(path: Path, target_mb: int | None = None) -> None:
+    # Golden fijado en el repo. Antes `--verify` comparaba contra el
+    # `.meta.json` que la misma corrida acababa de escribir, o sea contra sí
+    # mismo: una tautología que no podía detectar una deriva del generador.
+    # Con el golden acá, cambiar el corpus rompe el gate, que es el punto de
+    # declarar que la corrida es reproducible.
+    if target_mb is not None and target_mb in EXPECTED_SHA256:
+        expected = EXPECTED_SHA256[target_mb]
+        print(f"Verificando {path.name} contra el golden del repo ({target_mb} MB)...")
+        digest = sha256_of(path)
+        if digest == expected:
+            print(f"✓ SHA-256 correcta: {digest}")
+            return
+        print("✗ SHA-256 NO coincide con el golden del repo!")
+        print(f"  Esperado: {expected}")
+        print(f"  Obtenido: {digest}")
+        sys.exit(1)
+
     meta_path = path.with_suffix(".meta.json")
     if not meta_path.exists():
         print(f"ERROR: No se encontró {meta_path}")
@@ -323,12 +357,9 @@ def verify_file(path: Path) -> None:
     with open(meta_path) as f:
         meta = json.load(f)
 
-    print(f"Verificando SHA-256 de {path.name}...")
-    sha = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            sha.update(chunk)
-    digest = sha.hexdigest()
+    print(f"Verificando SHA-256 de {path.name} contra su sidecar (sin golden "
+          f"fijado para este tamaño)...")
+    digest = sha256_of(path)
 
     if digest == meta["sha256"]:
         print(f"✓ SHA-256 correcta: {digest}")
@@ -352,6 +383,6 @@ if __name__ == "__main__":
     out_path = script_dir / out_name
 
     if args.verify:
-        verify_file(out_path)
+        verify_file(out_path, target_mb=args.size if args.seed == 42 else None)
     else:
         generate_testfile(out_path, target_mb=args.size, seed=args.seed)
