@@ -35,7 +35,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust 1.92 (pinned MSRV)
-        uses: dtolnay/rust-toolchain@master
+        # Pineada a SHA: `@master` es una rama mutable de un repo de terceros,
+        # asi que cualquier commit nuevo alla corre con permisos plenos dentro
+        # del runner en cada push y cada PR. Este SHA es el que la rama
+        # resolvia al pinear (equivalente exacto a lo que ya corria).
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: "1.92"
 
@@ -76,7 +80,8 @@ jobs:
         shell: bash
         run: |
           cargo run --release -p poc-3a-rust-wgpu -- \
-            --file shared/test-data/test_5mb.txt --bench --frames 200
+            --file shared/test-data/test_5mb.txt --font shared/fonts/InterVariable.ttf \
+            --bench --frames 200
 
       - name: Run PoC 3B bench (Vello, headless scene build)
         shell: bash

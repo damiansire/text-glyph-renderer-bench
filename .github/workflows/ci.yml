@@ -34,7 +34,11 @@ jobs:
         # as the `toolchain` input. 1.92 is the MSRV: vello 0.7 / wgpu 28 (poc-3b
         # deps) declare `rust-version = 1.92`, so cargo's resolver rejects any
         # older toolchain with "rustc X is not supported by the following packages".
-        uses: dtolnay/rust-toolchain@master
+        # Pineada a SHA: `@master` es una rama mutable de un repo de terceros,
+        # asi que cualquier commit nuevo alla corre con permisos plenos dentro
+        # del runner en cada push y cada PR. Este SHA es el que la rama
+        # resolvia al pinear (equivalente exacto a lo que ya corria).
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: "1.92"
           components: rustfmt, clippy
