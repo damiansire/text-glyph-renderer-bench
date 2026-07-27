@@ -76,6 +76,39 @@ def _bench_env() -> dict[str, str]:
     return env
 
 
+def _write_report(name: str, payload: dict) -> Path:
+    import json
+
+    path = Path(_TMP.name) / name  # type: ignore[union-attr]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+# Minimal reports in the exact shape each family of PoCs emits. They are the
+# fixtures for "what the contract must accept", the counterpart of the
+# bare-poc_id report the contract must reject.
+_END_TO_END = {
+    "poc_id": "1a-web-dom",
+    "file": {"line_count": 100, "load_ms": 3.2},
+    "benchmark": {
+        "total_frames": 200, "dropped_frames": 1, "drop_rate_pct": 0.5,
+        "p50_ms": 1.0, "p95_ms": 2.0, "p99_ms": 3.0, "budget_ms": 8.333,
+    },
+}
+_SCENE_BUILD = {
+    "poc_id": "3b-rust-vello",
+    "measures": "cpu-scene-build-only",
+    "file": {"line_count": 100, "load_ms": 1},
+    "scene_build": {"total_iters": 50, "p50_us": 10, "p95_us": 20, "p99_us": 30},
+}
+_NO_GPU = {
+    "poc_id": "3a-rust-wgpu",
+    "measures": "real-gpu-render",
+    "gpu_available": False,
+    "file": {"line_count": 100, "load_ms": 0},
+}
+
+
 class SchemaContract(unittest.TestCase):
     def test_schema_is_valid_draft7(self) -> None:
         import json
@@ -86,6 +119,56 @@ class SchemaContract(unittest.TestCase):
             (ROOT / "shared" / "metrics" / "frame_stats.schema.json").read_text("utf-8")
         )
         jsonschema.Draft7Validator.check_schema(schema)
+
+    def test_report_without_any_metric_is_rejected(self) -> None:
+        # The gate's whole claim is "a bench ran only if it emitted metrics".
+        # A bare poc_id used to pass it, which made the claim false.
+        path = _write_report("bare.json", {"poc_id": "3a-rust-wgpu"})
+        ok, msg = validate_report(path, "3a-rust-wgpu")
+        self.assertFalse(ok, f"a report with no metrics must be rejected, got: {msg}")
+
+    def test_report_with_empty_benchmark_block_is_rejected(self) -> None:
+        path = _write_report(
+            "empty-bench.json",
+            {"poc_id": "1a-web-dom", "file": {"line_count": 1}, "benchmark": {}},
+        )
+        ok, msg = validate_report(path, "1a-web-dom")
+        self.assertFalse(ok, f"an empty benchmark block must be rejected, got: {msg}")
+
+    def test_each_real_report_shape_is_accepted(self) -> None:
+        for name, payload in (
+            ("end-to-end", _END_TO_END),
+            ("scene-build", _SCENE_BUILD),
+            ("no-gpu", _NO_GPU),
+        ):
+            with self.subTest(shape=name):
+                path = _write_report(f"{name}.json", payload)
+                ok, msg = validate_report(path, payload["poc_id"])
+                self.assertTrue(ok, msg)
+
+
+class ReportGateIsSingleImplementation(unittest.TestCase):
+    """The docstring of validate_report.py promises exactly one implementation
+    of the contract check. This asserts it instead of trusting the prose."""
+
+    def test_runner_reuses_the_shared_gate(self) -> None:
+        import benchmark_runner
+        import validate_report as gate
+
+        self.assertIs(benchmark_runner.validate_report, gate.validate_report)
+
+    def test_every_poc_declares_its_schema_id(self) -> None:
+        import json
+
+        import benchmark_runner
+
+        schema = json.loads(
+            (ROOT / "shared" / "metrics" / "frame_stats.schema.json").read_text("utf-8")
+        )
+        valid_ids = set(schema["properties"]["poc_id"]["enum"])
+        for key, info in benchmark_runner.POCS.items():
+            with self.subTest(poc=key):
+                self.assertIn(info["schema_id"], valid_ids)
 
 
 class WebPocsSmoke(unittest.TestCase):

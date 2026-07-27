@@ -153,3 +153,14 @@ jobs:
           jsonschema.Draft7Validator.check_schema(schema)
           print("frame_stats.schema.json is a valid draft-07 schema")
           PY
+
+      # The step above only proves the schema is well-formed. This one runs the
+      # orchestrator for real over a 1 MB corpus with the PoC that has a Node
+      # path (1A) and relies on its exit code: non-zero if the PoC produced no
+      # valid row. Without this the orchestrator was never executed by CI, so
+      # nothing caught it exiting 0 on a run where every PoC had failed.
+      - name: Orchestrator end-to-end gate (1A over a 1 MB corpus)
+        run: |
+          # `--output` is resolved relative to the generator's own directory.
+          python shared/test-data/generate_testfile.py --size 1 --output ci_corpus.txt
+          python shared/metrics/benchmark_runner.py --poc 1a --file shared/test-data/ci_corpus.txt

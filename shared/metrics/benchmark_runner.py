@@ -10,14 +10,21 @@ Usage:
 
 Prerequisites:
     - test_100mb.txt generated (run: python3 shared/test-data/generate_testfile.py)
-    - Node.js 20+  (for PoCs 1A–1D)
-    - Xcode 15+    (for PoCs 2A, 2B: swift build)
-    - Rust 1.78+   (for PoCs 3A, 3B: cargo build)
+    - Node.js 20+   (for PoCs 1A–1D)
+    - Xcode 15+     (for PoCs 2A, 2B: swift build)
+    - Rust 1.78+    (for PoCs 3A, 3B: cargo build)
     - npm packages installed in each poc-1* directory
+    - `jsonschema` (pip install jsonschema): the report gate is fail-closed, so
+      without it the run aborts instead of publishing unvalidated numbers.
 
 Output:
     results/comparison.csv
     results/comparison.md
+
+Exit codes:
+    0 = every requested PoC produced a valid row.
+    1 = partial: at least one requested PoC failed to produce its row.
+    2 = nothing ran (no rows at all), or a precondition is missing.
 """
 
 import argparse
@@ -29,12 +36,16 @@ import sys
 import time
 from pathlib import Path
 
+# The report gate lives in exactly one module; the runner consumes it instead of
+# reimplementing it (an earlier duplicate here was fail-open and contradicted it).
+sys.path.insert(0, str(Path(__file__).parent))
+from validate_report import validate_report  # noqa: E402
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 ROOT_DIR     = Path(__file__).parent.parent.parent  # monorepo root
 RESULTS_DIR  = ROOT_DIR / "results"
 TEST_FILE    = ROOT_DIR / "shared" / "test-data" / "test_100mb.txt"
-SCHEMA_FILE  = ROOT_DIR / "shared" / "metrics" / "frame_stats.schema.json"
 
 # ── PoC registry ─────────────────────────────────────────────────────────────
 
@@ -45,6 +56,10 @@ POCS = {
         "cmd":   ["node", "benchmarks/synthetic_scroll.js", str(TEST_FILE)],
         # Audit P1/P2: single canonical artifact named after the schema poc_id.
         "result_file": RESULTS_DIR / "1a-web-dom_stats.json",
+        # The schema enum id is declared here, not derived from the folder name:
+        # deriving it needed a static exception table for 3a/3b, i.e. a third
+        # place where the id could drift away from the schema.
+        "schema_id": "1a-web-dom",
         "category": "Web",
     },
     "1b": {
@@ -52,6 +67,7 @@ POCS = {
         "cwd":   ROOT_DIR / "poc-1b-canvas2d",
         "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1b-canvas2d_stats.json",
+        "schema_id": "1b-canvas2d",
         "category": "Web",
     },
     "1c": {
@@ -59,6 +75,7 @@ POCS = {
         "cwd":   ROOT_DIR / "poc-1c-webgpu-atlas",
         "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1c-webgpu-atlas_stats.json",
+        "schema_id": "1c-webgpu-atlas",
         "category": "Web",
     },
     "1d": {
@@ -66,6 +83,7 @@ POCS = {
         "cwd":   ROOT_DIR / "poc-1d-webgpu-msdf",
         "cmd":   ["npm", "run", "benchmark", "--", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "1d-webgpu-msdf_stats.json",
+        "schema_id": "1d-webgpu-msdf",
         "category": "Web",
         # Audit P4: 1D has no index.html and no charset; it never renders nor
         # emits stats. Marked not-implemented so the orchestrator skips it
@@ -78,6 +96,7 @@ POCS = {
         "cmd":   ["swift", "run", "-c", "release", "POC2A",
                   "--benchmark", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "2a-textkit2_stats.json",
+        "schema_id": "2a-textkit2",
         "category": "Native macOS",
     },
     "2b": {
@@ -86,6 +105,7 @@ POCS = {
         "cmd":   ["swift", "run", "-c", "release", "POC2B",
                   "--benchmark", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "2b-metal3-coretext_stats.json",
+        "schema_id": "2b-metal3-coretext",
         "category": "Native macOS",
     },
     "3a": {
@@ -94,6 +114,7 @@ POCS = {
         "cmd":   ["cargo", "run", "--release", "-p", "poc-3a-rust-wgpu", "--",
                   "--bench", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "3a-rust-wgpu_stats.json",
+        "schema_id": "3a-rust-wgpu",
         "category": "Systems (Rust)",
     },
     "3b": {
@@ -102,6 +123,7 @@ POCS = {
         "cmd":   ["cargo", "run", "--release", "-p", "poc-3b-rust-vello", "--",
                   "--bench", "--headless", "--file", str(TEST_FILE)],
         "result_file": RESULTS_DIR / "3b-rust-vello_stats.json",
+        "schema_id": "3b-rust-vello",
         "category": "Systems (Rust)",
     },
 }
@@ -144,16 +166,19 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
         # Read result JSON.
         result_file = info["result_file"]
         if result_file.exists():
-            with open(result_file) as f:
-                data = json.load(f)
             # Audit P2: validate against the executable data contract. A PoC
             # that emits a non-conforming report is a hard failure of the
-            # comparison, not a silent pass.
-            if not validate_report(poc_id, data, result_file):
+            # comparison, not a silent pass. The gate is the shared module, so
+            # its fail-closed semantics (missing `jsonschema` = failure) apply
+            # here too.
+            ok, msg = validate_report(result_file, info["schema_id"])
+            if not ok:
+                print(f"  SCHEMA ERROR: {msg}")
                 return None
-            return data
+            with open(result_file, encoding="utf-8") as f:
+                return json.load(f)
         else:
-            print(f"  WARNING: result file not found: {result_file}")
+            print(f"  ERROR: result file not found: {result_file}")
             return None
     except subprocess.TimeoutExpired:
         print("  TIMEOUT after 300s")
@@ -164,72 +189,6 @@ def run_poc(poc_id: str, info: dict) -> dict | None:
     except FileNotFoundError as e:
         print(f"  SKIPPED: command not found — {e}")
         return None
-
-
-# ── Schema validation (audit P2) ─────────────────────────────────────────────
-
-_SCHEMA_CACHE: dict | None = None
-
-
-def _load_schema() -> dict | None:
-    """Load and cache the BenchmarkReport JSON schema. Returns None if the
-    `jsonschema` package or the schema file is unavailable (validation is then
-    skipped with a warning rather than blocking the run)."""
-    global _SCHEMA_CACHE
-    if _SCHEMA_CACHE is not None:
-        return _SCHEMA_CACHE
-    if not SCHEMA_FILE.exists():
-        print(f"  WARNING: schema not found at {SCHEMA_FILE}; skipping validation")
-        return None
-    with open(SCHEMA_FILE) as f:
-        _SCHEMA_CACHE = json.load(f)
-    return _SCHEMA_CACHE
-
-
-def validate_report(poc_id: str, data: dict, src: Path) -> bool:
-    """Validate a PoC's *_stats.json against frame_stats.schema.json and check
-    that its poc_id is the expected one. Returns True if valid (or if the
-    validator is unavailable)."""
-    try:
-        import jsonschema
-    except ImportError:
-        print("  WARNING: `jsonschema` not installed; skipping schema validation"
-              " (pip install jsonschema)")
-        return True
-
-    schema = _load_schema()
-    if schema is None:
-        return True
-
-    try:
-        jsonschema.validate(instance=data, schema=schema)
-    except jsonschema.ValidationError as e:
-        print(f"  SCHEMA ERROR in {src.name}: {e.message}")
-        return False
-
-    # The enum check above guarantees poc_id is one of the 8 valid ids; also
-    # assert it is the one we expected for this slot.
-    if data.get("poc_id") != poc_id_to_schema_id(poc_id):
-        print(f"  SCHEMA ERROR in {src.name}: poc_id "
-              f"{data.get('poc_id')!r} != expected "
-              f"{poc_id_to_schema_id(poc_id)!r}")
-        return False
-    return True
-
-
-def poc_id_to_schema_id(poc_id: str) -> str:
-    """Map the runner's short key (e.g. '1a') to the schema enum id
-    (e.g. '1a-web-dom')."""
-    folder = POCS[poc_id]["cwd"].name
-    # cwd folder is e.g. "poc-1a-web-dom"; the schema id strips the "poc-" prefix.
-    # For 3a/3b the cwd is ROOT, so fall back to a static table.
-    static = {
-        "3a": "3a-rust-wgpu",
-        "3b": "3b-rust-vello",
-    }
-    if poc_id in static:
-        return static[poc_id]
-    return folder[len("poc-"):] if folder.startswith("poc-") else folder
 
 
 def extract_metrics(poc_id: str, data: dict) -> dict:
@@ -354,23 +313,33 @@ if __name__ == "__main__":
         print(f"ERROR: test file not found: {test_file}")
         print("Generate it with:")
         print("  python3 shared/test-data/generate_testfile.py")
-        sys.exit(1)
+        sys.exit(2)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Run selected PoCs
+    # Run selected PoCs. A PoC that was asked for and did not produce a valid
+    # row is a failure of the comparison, not a footnote: the exit code has to
+    # say so, otherwise a cron/CI job cannot tell "the 8 ran" from "the 8 died"
+    # while a stale comparison.csv sits on disk looking current.
     rows = []
+    failed: list[str] = []
     for poc_id in args.poc:
         if poc_id not in POCS:
-            print(f"WARNING: unknown PoC '{poc_id}', skipping")
+            print(f"ERROR: unknown PoC '{poc_id}'")
+            failed.append(poc_id)
             continue
         data = run_poc(poc_id, POCS[poc_id])
         if data:
             rows.append(extract_metrics(poc_id, data))
+        elif not POCS[poc_id].get("not_implemented"):
+            # A declared not-implemented PoC is a deliberate gap, not a failure.
+            failed.append(poc_id)
 
     if not rows:
         print("\nNo results to aggregate.")
-        sys.exit(0)
+        if failed:
+            print(f"FAILED PoCs: {', '.join(failed)}")
+        sys.exit(2)
 
     # Write outputs
     csv_path = RESULTS_DIR / "comparison.csv"
@@ -383,4 +352,9 @@ if __name__ == "__main__":
     print(f"  CSV: {csv_path}")
     print(f"  MD:  {md_path}")
     print(f"{'='*60}")
-    print(open(md_path).read())
+    print(open(md_path, encoding="utf-8").read())
+
+    if failed:
+        print(f"\nPARTIAL RUN: {len(failed)} PoC(s) produced no valid row: "
+              f"{', '.join(failed)}")
+        sys.exit(1)

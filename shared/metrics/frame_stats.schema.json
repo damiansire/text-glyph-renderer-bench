@@ -1,10 +1,57 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "BenchmarkReport",
-    "description": "Reporte AGREGADO que cada PoC escribe en results/<poc-id>_stats.json. Refleja lo que los PoCs realmente emiten: un objeto por corrida (no un registro por frame). Algunos PoCs (3a/3b) son microbenchmarks que a propósito NO reportan veredicto de frame-budget; por eso `benchmark` es opcional y se admiten bloques de microbench alternativos.",
+    "description": "Reporte AGREGADO que cada PoC escribe en results/<poc-id>_stats.json. Refleja lo que los PoCs realmente emiten: un objeto por corrida (no un registro por frame). Un reporte válido es EXACTAMENTE una de tres formas (ver `oneOf`): end-to-end contra el presupuesto de frame, microbench de construcción de escena (3b), o degradado sin GPU. Un `{\"poc_id\": ...}` pelado NO es un reporte válido: un bench 'corrió' solo si emitió métricas.",
     "type": "object",
     "required": [
         "poc_id"
+    ],
+    "oneOf": [
+        {
+            "title": "end-to-end",
+            "description": "PoC que mide frames contra el presupuesto de 8.33 ms.",
+            "required": ["benchmark", "file"],
+            "properties": {
+                "benchmark": {
+                    "required": [
+                        "total_frames",
+                        "dropped_frames",
+                        "drop_rate_pct",
+                        "p50_ms",
+                        "p95_ms",
+                        "p99_ms",
+                        "budget_ms"
+                    ]
+                },
+                "file": {
+                    "required": ["line_count"]
+                }
+            }
+        },
+        {
+            "title": "scene-build-microbench",
+            "description": "PoC que mide construcción de escena en CPU (3b): sin veredicto de frame-budget, pero con percentiles y n.",
+            "required": ["measures", "file", "scene_build"],
+            "properties": {
+                "scene_build": {
+                    "required": ["total_iters", "p50_us", "p95_us", "p99_us"]
+                },
+                "file": {
+                    "required": ["line_count"]
+                }
+            }
+        },
+        {
+            "title": "degradado-sin-gpu",
+            "description": "Corrida en un entorno sin adaptador GPU: se declara explícitamente y no aporta números de render.",
+            "required": ["gpu_available", "file"],
+            "properties": {
+                "gpu_available": { "const": false },
+                "file": {
+                    "required": ["line_count"]
+                }
+            }
+        }
     ],
     "properties": {
         "poc_id": {
@@ -51,6 +98,21 @@
                 "p95_ms": { "type": "number", "minimum": 0 },
                 "p99_ms": { "type": "number", "minimum": 0 },
                 "budget_ms": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": true
+        },
+        "gpu_available": {
+            "type": "boolean",
+            "description": "false = el entorno no expuso adaptador GPU; la corrida no aporta números de render."
+        },
+        "scene_build": {
+            "type": "object",
+            "description": "Microbench de construcción de escena en CPU (3b). Los percentiles en µs son la fuente; los *_ms son conveniencia.",
+            "properties": {
+                "total_iters": { "type": "integer", "minimum": 0 },
+                "p50_us": { "type": "number", "minimum": 0 },
+                "p95_us": { "type": "number", "minimum": 0 },
+                "p99_us": { "type": "number", "minimum": 0 }
             },
             "additionalProperties": true
         },
