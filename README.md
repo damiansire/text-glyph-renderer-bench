@@ -52,11 +52,17 @@ to even start without it:
 
 ```bash
 mkdir -p shared/fonts
-curl -L -o shared/fonts/InterVariable.ttf \
-  https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.ttf
+# Pinned to an immutable commit and checksummed: the font feeds the shaping hot
+# path, so an unverified binary from a moving branch would make every measured
+# number unreproducible. Same block runs in bench.yml.
+curl --fail --location --silent --show-error -o shared/fonts/InterVariable.ttf \
+  https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/docs/font-files/InterVariable.ttf
+echo "4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf  shared/fonts/InterVariable.ttf" \
+  | sha256sum --check
 ```
 
-(Any real `.ttf`/`.otf` works — pass a different one with `--font <path>`.)
+(Any real `.ttf`/`.otf` works — pass a different one with `--font <path>`. On
+macOS use `shasum -a 256 --check` instead of `sha256sum --check`.)
 
 ### 3. Build Rust workspace
 

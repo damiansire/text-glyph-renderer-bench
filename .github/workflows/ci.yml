@@ -16,6 +16,12 @@ on:
     branches: [main]
   pull_request:
 
+# Privilegio minimo: estos jobs solo compilan, testean y lintean; ninguno
+# necesita escribir en el repo. Sin este bloque el GITHUB_TOKEN hereda el
+# default del repositorio, que puede ser read/write.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -26,7 +32,7 @@ jobs:
     name: fmt + clippy + test + check (Rust)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust 1.92 (pinned MSRV)
         # Audit P8: pin the toolchain so the gate is reproducible and matches
@@ -44,7 +50,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Format check
         run: cargo fmt --all --check
@@ -86,9 +92,9 @@ jobs:
       run:
         working-directory: ${{ matrix.poc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -124,14 +130,14 @@ jobs:
     name: ruff + py_compile + schema gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       # Node is needed for the 1A headless smoke test (Node baseline path).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 

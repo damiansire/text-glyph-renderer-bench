@@ -20,6 +20,12 @@ on:
       - "Cargo.lock"
       - ".github/workflows/bench.yml"
 
+# Privilegio minimo: este workflow compila, corre los benches y sube artifacts;
+# no necesita escribir en el repo (upload-artifact usa la API de artifacts del
+# runner, no el token de contents).
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -32,7 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Rust 1.92 (pinned MSRV)
         # Pineada a SHA: `@master` es una rama mutable de un repo de terceros,
@@ -44,9 +50,9 @@ jobs:
           toolchain: "1.92"
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -59,12 +65,24 @@ jobs:
       - name: Generate small test corpus
         run: python3 shared/test-data/generate_testfile.py --size 5
 
-      - name: Get a test font
+      # La fuente es insumo del hot path de shaping, asi que su integridad ancla
+      # la reproducibilidad de los numeros: ref inmutable (commit, no branch),
+      # curl --fail (un 404 ya no deja un HTML disfrazado de .ttf) y SHA-256
+      # verificado antes de usarla. El mismo bloque vive en el README.
+      - name: Get a test font (pinned + checksum)
         shell: bash
         run: |
           mkdir -p shared/fonts
-          curl -L -o shared/fonts/InterVariable.ttf \
-            https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.ttf
+          curl --fail --location --silent --show-error -o shared/fonts/InterVariable.ttf \
+            https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/docs/font-files/InterVariable.ttf
+          python3 - <<'PY'
+          import hashlib, sys
+          expected = "4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf"
+          actual = hashlib.sha256(open("shared/fonts/InterVariable.ttf", "rb").read()).hexdigest()
+          if actual != expected:
+              sys.exit(f"font SHA-256 mismatch:\n  expected {expected}\n  got      {actual}")
+          print("font SHA-256 OK")
+          PY
 
       - name: Build Rust PoCs (release)
         run: cargo build --release --locked -p poc-3a-rust-wgpu -p poc-3b-rust-vello
@@ -101,7 +119,7 @@ jobs:
           python3 shared/metrics/validate_report.py results/3b-rust-vello_stats.json 3b-rust-vello
 
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: bench-results-${{ matrix.os }}
           path: results/*.json
