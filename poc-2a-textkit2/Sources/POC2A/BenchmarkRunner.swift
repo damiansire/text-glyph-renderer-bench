@@ -191,8 +191,13 @@ final class BenchmarkRunner {
     }
 
     private func writeResults(json: String) {
-        // Write to results/ relative to the executable
-        let resultsDir = URL(fileURLWithPath: "results")
+        // The orchestrator runs this PoC with cwd = poc-2a-textkit2 and looks
+        // for the report in the canonical <repo>/results, which it passes as
+        // BENCH_RESULTS_DIR. Writing to a cwd-relative "results" made 2A drop
+        // out of the comparison with "result file not found". Fall back to the
+        // local directory for standalone runs.
+        let resultsPath = ProcessInfo.processInfo.environment["BENCH_RESULTS_DIR"] ?? "results"
+        let resultsDir = URL(fileURLWithPath: resultsPath)
         try? FileManager.default.createDirectory(at: resultsDir, withIntermediateDirectories: true)
         let outFile = resultsDir.appendingPathComponent("2a-textkit2_stats.json")
         try? json.write(to: outFile, atomically: true, encoding: .utf8)

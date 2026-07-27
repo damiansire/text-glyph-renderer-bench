@@ -171,7 +171,11 @@ final class PoC2BViewController: NSViewController {
         if let data = try? JSONSerialization.data(withJSONObject: result, options: .prettyPrinted),
            let json = String(data: data, encoding: .utf8) {
             print("\n=== PoC 2B Results ===\n\(json)")
-            let dir = URL(fileURLWithPath: "results")
+            // Canonical results directory handed down by the orchestrator (see
+            // the same note in POC2A/BenchmarkRunner.swift); a cwd-relative
+            // "results" is never read by the runner.
+            let resultsPath = ProcessInfo.processInfo.environment["BENCH_RESULTS_DIR"] ?? "results"
+            let dir = URL(fileURLWithPath: resultsPath)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try? json.write(to: dir.appendingPathComponent("2b-metal3-coretext_stats.json"), atomically: true, encoding: .utf8)
         }
