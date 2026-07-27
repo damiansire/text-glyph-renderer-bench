@@ -68,5 +68,13 @@ ipcMain.on('benchmark-complete', (e, stats) => {
     if (cli.benchmark) setTimeout(() => app.quit(), 500);
 });
 
+// El renderer avisa aca un error fatal de bootstrap. En modo benchmark la
+// corrida no va a producir reporte, asi que el proceso tiene que salir
+// distinto de cero en vez de colgarse hasta el timeout del orquestador.
+ipcMain.on('benchmark-failed', (e, detail) => {
+    if (!isFromOwnMainFrame(e)) return;
+    process.stderr.write(`[1C] fatal: ${detail}\n`);
+    app.exit(1);
+});
 ipcMain.on('log', (_e, msg) => process.stdout.write(`[1C] ${msg}\n`));
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

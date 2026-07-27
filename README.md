@@ -22,7 +22,7 @@ Don't read the second group as part of any comparison.
 |--------|-------|----------|------------------|
 | `poc-1a-web-dom` | Electron + DOM | Web Sandboxed | End-to-end scroll frames vs the 8.33 ms budget. A Node-only baseline path (`benchmarks/synthetic_scroll.js`, no DOM) also emits stats headlessly and is smoke-tested in CI. |
 | `poc-1b-canvas2d` | Canvas 2D + OffscreenCanvas | Web Sandboxed | End-to-end scroll frames. Emits stats only inside the Electron GUI (`electron . --benchmark`). |
-| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | End-to-end scroll frames. Emits stats only inside the Electron GUI + a WebGPU adapter. |
+| `poc-1c-webgpu-atlas` | WebGPU + Texture Atlas | Web Sandboxed | **CPU encode only.** The timer stops right after `queue.submit()`, which is asynchronous, so the number is the cost of encoding the frame on the CPU, not of the GPU finishing it. Its report says so (`measures: "cpu-encode-only"`) and it must not be ranked against the end-to-end rows above. Emits stats only inside the Electron GUI + a WebGPU adapter. |
 | `poc-2a-textkit2` | TextKit 2 (NSTextView) | Native macOS | End-to-end scroll frames. macOS-only (Swift + TextKit 2). |
 | `poc-2b-metal3-coretext` | Metal 3 + CoreText + Arg Buffers | Native macOS | End-to-end scroll frames. macOS-only (Swift + Metal 3). |
 | `poc-3a-rust-wgpu` | Rust + wgpu + HarfBuzz | Systems | **Real offscreen GPU render per frame** (shape → rasterize → atlas upload → single instanced draw → GPU submit) vs the 8.33 ms budget, so it *does* report a drop rate. On a GPU-less runner it writes a `gpu_available: false` report instead of fabricating timings. |
