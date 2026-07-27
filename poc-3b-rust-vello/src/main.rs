@@ -74,16 +74,45 @@ impl Args {
                 "--file" => args.file = value("--file", argv.next()).into(),
                 "--font" => args.font = value("--font", argv.next()).into(),
                 "--bench" => args.bench = true,
+                // Accepted for the orchestrator's CLI contract. 3B only has a
+                // headless path (the bench is a CPU scene build, no window
+                // exists), so the flag selects nothing; erroring on it would
+                // break every documented invocation.
                 "--headless" => args.headless = true,
                 "--frames" => args.scroll_frames = parse_value("--frames", argv.next()),
                 "--scroll-px" => args.scroll_px = parse_value("--scroll-px", argv.next()),
                 "--line-height" => args.line_height = parse_value("--line-height", argv.next()),
-                _ => {}
+                "--help" | "-h" => {
+                    println!("{USAGE}");
+                    std::process::exit(0);
+                }
+                // A typo silently ignored used to run a bench the caller did
+                // not configure; fail loudly instead.
+                other => {
+                    eprintln!("error: unknown flag '{other}'\n\n{USAGE}");
+                    std::process::exit(2);
+                }
             }
         }
         args
     }
 }
+
+const USAGE: &str = "\
+poc3b — Rust + Vello CPU scene-build microbenchmark
+
+Usage: poc3b [--file <path>] [--bench] [--frames <n>] [options]
+
+Options:
+  --file <path>         Corpus to load (default: shared/test-data/test_100mb.txt)
+  --font <path>         Font file (default: shared/fonts/InterVariable.ttf)
+  --bench               Run the scene-build microbenchmark and write the report
+  --frames <n>          Benchmark iterations (default: 3600)
+  --scroll-px <px>      Scroll advance per iteration (default: 60)
+  --line-height <px>    Line height in px (default: 20)
+  --headless            Accepted for the runner's CLI contract; 3B only has a
+                        headless path, so this selects nothing
+  --help, -h            Show this help";
 
 /// Build the run report in the canonical `frame_stats.schema.json` shape.
 ///
@@ -163,7 +192,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !args.bench {
         println!("Use --bench to run the scene-build microbenchmark.");
-        println!("Use --headless for CI mode (no window).");
         return Ok(());
     }
 

@@ -94,12 +94,27 @@ impl Args {
                 "--frames" => scroll_frames = parse_value("--frames", args.next()),
                 "--scroll-px" => scroll_px = parse_value("--scroll-px", args.next()),
                 "--line-height" => line_h = parse_value("--line-height", args.next()),
-                _ => {}
+                "--help" | "-h" => {
+                    println!("{USAGE}");
+                    std::process::exit(0);
+                }
+                // A typo silently ignored used to run a bench the caller did
+                // not configure; fail loudly instead.
+                other => {
+                    eprintln!("error: unknown flag '{other}'\n\n{USAGE}");
+                    std::process::exit(2);
+                }
             }
         }
 
         Self {
-            file: file.expect("--file <path> is required"),
+            // A missing --file is a usage error, not a bug: print the usage
+            // and exit 2 instead of panicking with a backtrace (`--help`
+            // itself used to die on this expect before printing anything).
+            file: file.unwrap_or_else(|| {
+                eprintln!("error: --file <path> is required\n\n{USAGE}");
+                std::process::exit(2);
+            }),
             font,
             font_size_px,
             bench,
@@ -109,6 +124,21 @@ impl Args {
         }
     }
 }
+
+const USAGE: &str = "\
+poc3a — Rust + wgpu + HarfBuzz GPU render benchmark
+
+Usage: poc3a --file <path> [--bench] [--frames <n>] [options]
+
+Options:
+  --file <path>         Corpus to load (required)
+  --font <path>         Font file (default: shared/fonts/InterVariable.ttf)
+  --font-size <px>      Font size in px (default: 13)
+  --bench               Run the GPU render benchmark and write the report
+  --frames <n>          Benchmark frames (default: 3600)
+  --scroll-px <px>      Scroll advance per frame (default: 60)
+  --line-height <px>    Line height in px (default: 20)
+  --help, -h            Show this help";
 
 // ── Benchmark: real GPU render per synthetic-scroll frame ──────────────────
 

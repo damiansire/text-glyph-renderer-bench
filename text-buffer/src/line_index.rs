@@ -129,10 +129,14 @@ impl LineIndex {
     /// Returns a slice of line start offsets for lines in `[first_line, last_line)`.
     ///
     /// Used by the renderer to iterate over a viewport range without allocating.
+    /// Out-of-range or inverted ranges clamp to an empty slice instead of
+    /// panicking: the indices come from scroll math, and a viewport scrolled
+    /// past the end of a short file is a normal state, not a caller bug.
     #[inline]
     pub fn line_range_offsets(&self, first_line: usize, last_line: usize) -> &[u32] {
-        let end = last_line.min(self.offsets.len());
-        &self.offsets[first_line..end]
+        let start = first_line.min(self.offsets.len());
+        let end = last_line.clamp(start, self.offsets.len());
+        &self.offsets[start..end]
     }
 
     /// Return the (first_line, last_line) range that covers the byte range
@@ -273,6 +277,27 @@ mod tests {
         let li = idx("a\nb\nc\nd\n");
         let range = li.line_range_offsets(1, 3);
         assert_eq!(range, &[2u32, 4u32]);
+    }
+
+    #[test]
+    fn line_range_offsets_clamps_out_of_range_starts() {
+        // A viewport scrolled past the end of a short file yields a start
+        // beyond the index; that must be an empty slice, not a panic
+        // ("slice index starts at N but ends at M").
+        let li = idx("a\nb");
+        assert_eq!(li.line_range_offsets(5, 3), &[] as &[u32]);
+        assert_eq!(li.line_range_offsets(10, 100), &[] as &[u32]);
+        assert_eq!(
+            li.line_range_offsets(li.count(), li.count() + 1),
+            &[] as &[u32]
+        );
+    }
+
+    #[test]
+    fn line_range_offsets_clamps_inverted_ranges() {
+        let li = idx("a\nb\nc\nd\n");
+        assert_eq!(li.line_range_offsets(3, 1), &[] as &[u32]);
+        assert_eq!(li.line_range_offsets(2, 2), &[] as &[u32]);
     }
 
     #[test]
