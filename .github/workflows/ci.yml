@@ -50,7 +50,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy (workspace)
-        run: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets --locked
 
       # Audit P8 / tgrb-1: run every Rust crate's tests, including poc-3b.
       # poc-3b's binary used to be excluded here because it crashed
@@ -63,13 +63,13 @@ jobs:
       # a clear message when no GPU adapter is available, which is expected
       # on this `ubuntu-latest` runner (see poc-3a's own README/doc-comments).
       - name: Test (workspace)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
       # `cargo check` re-validates the full workspace compiles; cheap and
       # redundant with `cargo test` for crates with tests, but also catches
       # non-test binaries/examples that `cargo test` would not build.
       - name: Check (workspace)
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
 
   # ── Web PoCs (Node / Electron) ──────────────────────────────────────────────
   web:

@@ -67,7 +67,7 @@ jobs:
             https://github.com/rsms/inter/raw/master/docs/font-files/InterVariable.ttf
 
       - name: Build Rust PoCs (release)
-        run: cargo build --release -p poc-3a-rust-wgpu -p poc-3b-rust-vello
+        run: cargo build --release --locked -p poc-3a-rust-wgpu -p poc-3b-rust-vello
 
       # `--frames` kept small: this workflow verifies the cross-platform path
       # runs end-to-end and captures a real number for the README table, it
@@ -79,14 +79,14 @@ jobs:
       - name: Run PoC 3A bench (wgpu + HarfBuzz)
         shell: bash
         run: |
-          cargo run --release -p poc-3a-rust-wgpu -- \
+          cargo run --release --locked -p poc-3a-rust-wgpu -- \
             --file shared/test-data/test_5mb.txt --font shared/fonts/InterVariable.ttf \
             --bench --frames 200
 
       - name: Run PoC 3B bench (Vello, headless scene build)
         shell: bash
         run: |
-          cargo run --release -p poc-3b-rust-vello -- \
+          cargo run --release --locked -p poc-3b-rust-vello -- \
             --file shared/test-data/test_5mb.txt --font shared/fonts/InterVariable.ttf \
             --bench --headless --frames 200
 
