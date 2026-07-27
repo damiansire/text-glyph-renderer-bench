@@ -25,7 +25,8 @@ class FrameMetrics {
      */
     constructor(pocId) {
         this._pocId = pocId;
-        this._frames = [];   // array of frame time in ms (for percentile computation)
+        this._frames = [];   // percentile window: only the last 10k frame times
+        this._totalFrames = 0; // monotonic, never trimmed: denominator for drop rate
         this._dropped = 0;
         this._lastFrameMs = 0;
         this._linesVisible = 0;
@@ -33,11 +34,14 @@ class FrameMetrics {
         this._budgetMs = 1000 / 120; // 8.333ms at 120Hz
         this._startTs = performance.now();
 
-        // Key-to-pixel tracking (for interactive mode)
+        // Key-to-pixel tracking (for interactive mode). Guarded so the pure
+        // counting logic stays unit-testable under Node (no DOM there).
         this._pendingKeyTs = null;
-        document.addEventListener('keydown', (e) => {
-            this._pendingKeyTs = e.timeStamp;
-        }, { capture: true });
+        if (typeof document !== 'undefined') {
+            document.addEventListener('keydown', (e) => {
+                this._pendingKeyTs = e.timeStamp;
+            }, { capture: true });
+        }
     }
 
     /**
@@ -52,11 +56,15 @@ class FrameMetrics {
         this._lastFrameMs = frameMs;
         this._linesVisible = linesVisible;
         this._frameIndex++;
+        this._totalFrames++;
 
         const dropped = frameMs > this._budgetMs;
         if (dropped) this._dropped++;
 
-        // Store frame times (keep last 10k to bound memory)
+        // Store frame times (keep last 10k to bound memory). `_dropped` and
+        // `_totalFrames` keep counting the whole run: mixing the whole-run
+        // dropped counter with this window as denominator produced drop rates
+        // above 100 % past 10k frames, which the report schema rejects.
         if (this._frames.length >= 10_000) {
             this._frames.shift();
         }
@@ -119,16 +127,24 @@ class FrameMetrics {
 
         const percentile = (p) => n > 0 ? sorted[Math.floor(n * p / 100)] : 0;
         const avg = n > 0 ? this._frames.reduce((a, b) => a + b, 0) / n : 0;
-        const dropRate = n > 0 ? (this._dropped / n) * 100 : 0;
+        // Whole-run counters on both sides of the division: dividing the
+        // whole-run dropped count by the 10k percentile window overstated the
+        // rate (above 100 % past 10k frames) and broke the schema's maximum.
+        const dropRate = this._totalFrames > 0
+            ? (this._dropped / this._totalFrames) * 100
+            : 0;
 
+        // The meta block is renderer context; under Node (unit tests) there is
+        // no DOM, so it degrades to nulls instead of throwing.
+        const hasDom = typeof window !== 'undefined';
         return {
             poc_id: this._pocId,
             meta: {
-                platform: navigator.platform,
-                userAgent: navigator.userAgent,
-                devicePixelRatio: window.devicePixelRatio,
-                innerWidth: window.innerWidth,
-                innerHeight: window.innerHeight,
+                platform: hasDom ? navigator.platform : null,
+                userAgent: hasDom ? navigator.userAgent : null,
+                devicePixelRatio: hasDom ? window.devicePixelRatio : null,
+                innerWidth: hasDom ? window.innerWidth : null,
+                innerHeight: hasDom ? window.innerHeight : null,
                 timestamp: new Date().toISOString(),
             },
             file: {
@@ -137,7 +153,7 @@ class FrameMetrics {
                 split_ms: Math.round(split_ms * 100) / 100,
             },
             benchmark: {
-                total_frames: n,
+                total_frames: this._totalFrames,
                 dropped_frames: this._dropped,
                 drop_rate_pct: Math.round(dropRate * 100) / 100,
                 avg_frame_ms: Math.round(avg * 1000) / 1000,
@@ -145,10 +161,18 @@ class FrameMetrics {
                 p95_ms: Math.round(percentile(95) * 1000) / 1000,
                 p99_ms: Math.round(percentile(99) * 1000) / 1000,
                 p999_ms: Math.round(percentile(99.9) * 1000) / 1000,
+                // Honest framing: the percentiles above describe only the last
+                // `percentile_window_frames` frames, not the whole run.
+                percentile_window_frames: n,
                 budget_ms: this._budgetMs,
             },
         };
     }
 }
 
-window.FrameMetrics = FrameMetrics;
+if (typeof window !== 'undefined') {
+    window.FrameMetrics = FrameMetrics;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { FrameMetrics };
+}

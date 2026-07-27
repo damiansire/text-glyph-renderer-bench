@@ -272,7 +272,10 @@
                         measures: 'cpu-encode-only (timer stops at queue.submit, no GPU completion wait)',
                         file: { line_count: lines.length, load_ms: +load_ms.toFixed(2) },
                         atlas: {
-                            final_hit_rate: +atlas.hitRate.toFixed(4), fill_ratio: +atlas.fillRatio.toFixed(4),
+                            // `hit_rate` is the canonical field name of the
+                            // schema's atlas block (same as 3A emits); the old
+                            // `final_hit_rate` drifted and no gate could see it.
+                            hit_rate: +atlas.hitRate.toFixed(4), fill_ratio: +atlas.fillRatio.toFixed(4),
                             evictions: atlas.stats.evictions
                         },
                         benchmark: {

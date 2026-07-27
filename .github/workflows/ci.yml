@@ -119,11 +119,13 @@ jobs:
 
       # `node --check` is parsing, not execution. The shared Electron
       # report-sink rules (canonical output dir, sender-frame filter, stats
-      # shape guard) are pure and run without Electron or a GPU, so they are a
-      # real gate. Runs once per matrix leg; cheap enough not to bother pruning.
-      - name: Unit tests (shared Electron host contract)
+      # shape guard) and 1A's FrameMetrics counting logic are pure and run
+      # without Electron or a GPU, so they are a real gate. The PoC test path
+      # is explicit (no `poc-*/**` glob) so node_modules never gets scanned.
+      # Runs once per matrix leg; cheap enough not to bother pruning.
+      - name: Unit tests (shared Electron host contract + pure PoC logic)
         working-directory: ${{ github.workspace }}
-        run: node --test "shared/**/*.test.js"
+        run: node --test "shared/**/*.test.js" "poc-1a-web-dom/renderer/metrics.test.js"
 
   # ── Python orchestrator + JSON Schema contract ──────────────────────────────
   python:
