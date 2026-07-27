@@ -18,6 +18,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+    resolveReportPath,
+    isWellFormedStats,
+    isFromOwnMainFrame,
+} = require('../shared/electron-host/bench-report-sink.js');
 
 // ── CLI flag parsing ──────────────────────────────────────────────────────────
 
@@ -87,20 +92,16 @@ function createWindow() {
 // ── IPC: receive benchmark results from renderer ──────────────────────────────
 
 ipcMain.on('benchmark-complete', (event, stats) => {
-    // Audit P10: only accept results from our own renderer frame.
-    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) return;
-    if (!stats || typeof stats !== 'object' || typeof stats.poc_id !== 'string') {
+    if (!isFromOwnMainFrame(event)) return;
+    if (!isWellFormedStats(stats)) {
         process.stderr.write('[renderer] ignoring malformed benchmark stats\n');
         return;
     }
     console.log('\n=== PoC 1A Benchmark Results ===');
     console.log(JSON.stringify(stats, null, 2));
 
-    // Audit P1: write to ROOT/results (BENCH_RESULTS_DIR) so the orchestrator
-    // finds it; fall back to the shared results directory for standalone runs.
-    const outDir = process.env.BENCH_RESULTS_DIR || path.join(__dirname, '..', 'results');
-    fs.mkdirSync(outDir, { recursive: true });
-    const outFile = path.join(outDir, '1a-web-dom_stats.json');
+    const outFile = resolveReportPath('1a-web-dom', path.join(__dirname, '..', 'results'));
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, JSON.stringify(stats, null, 2));
     console.log(`\nResults written to ${outFile}`);
 

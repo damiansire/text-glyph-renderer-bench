@@ -5,6 +5,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+    resolveReportPath,
+    isWellFormedStats,
+    isFromOwnMainFrame,
+} = require('../../shared/electron-host/bench-report-sink.js');
 
 function parseArgs() {
     const argv = process.argv.slice(2);
@@ -51,17 +56,15 @@ app.whenReady().then(() => {
 });
 
 ipcMain.on('benchmark-complete', (e, stats) => {
-    // Audit P10: only accept results from our own renderer frame.
-    if (e.senderFrame && e.senderFrame !== e.sender.mainFrame) return;
-    if (!stats || typeof stats !== 'object' || typeof stats.poc_id !== 'string') {
+    if (!isFromOwnMainFrame(e)) return;
+    if (!isWellFormedStats(stats)) {
         process.stderr.write('[1C] ignoring malformed benchmark stats\n');
         return;
     }
     console.log(JSON.stringify(stats, null, 2));
-    // Audit P1: write to ROOT/results (BENCH_RESULTS_DIR) when set.
-    const dir = process.env.BENCH_RESULTS_DIR || path.join(__dirname, '..', 'results');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, '1c-webgpu-atlas_stats.json'), JSON.stringify(stats, null, 2));
+    const outFile = resolveReportPath('1c-webgpu-atlas', path.join(__dirname, '..', 'results'));
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(stats, null, 2));
     if (cli.benchmark) setTimeout(() => app.quit(), 500);
 });
 

@@ -4,6 +4,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const {
+    resolveReportPath,
+    isWellFormedStats,
+    isFromOwnMainFrame,
+} = require('../../shared/electron-host/bench-report-sink.js');
 
 function parseArgs() {
     const argv = process.argv.slice(2);
@@ -42,11 +47,16 @@ app.whenReady().then(() => {
     win.loadURL(`file://${path.join(__dirname, '..', 'index.html')}?${p}`);
 });
 
-ipcMain.on('benchmark-complete', (_e, stats) => {
+ipcMain.on('benchmark-complete', (e, stats) => {
+    if (!isFromOwnMainFrame(e)) return;
+    if (!isWellFormedStats(stats)) {
+        process.stderr.write('[1D] ignoring malformed benchmark stats\n');
+        return;
+    }
     console.log(JSON.stringify(stats, null, 2));
-    const dir = path.join(__dirname, '..', 'results');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, '1d-webgpu-msdf_stats.json'), JSON.stringify(stats, null, 2));
+    const outFile = resolveReportPath('1d-webgpu-msdf', path.join(__dirname, '..', 'results'));
+    fs.mkdirSync(path.dirname(outFile), { recursive: true });
+    fs.writeFileSync(outFile, JSON.stringify(stats, null, 2));
     if (cli.benchmark) setTimeout(() => app.quit(), 500);
 });
 ipcMain.on('log', (_e, msg) => process.stdout.write(`[1D] ${msg}\n`));

@@ -107,6 +107,14 @@ jobs:
         run: |
           for f in $(git ls-files '*.js'); do node --check "$f"; done
 
+      # `node --check` is parsing, not execution. The shared Electron
+      # report-sink rules (canonical output dir, sender-frame filter, stats
+      # shape guard) are pure and run without Electron or a GPU, so they are a
+      # real gate. Runs once per matrix leg; cheap enough not to bother pruning.
+      - name: Unit tests (shared Electron host contract)
+        working-directory: ${{ github.workspace }}
+        run: node --test "shared/**/*.test.js"
+
   # ── Python orchestrator + JSON Schema contract ──────────────────────────────
   python:
     name: ruff + py_compile + schema gate
