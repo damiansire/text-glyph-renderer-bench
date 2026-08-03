@@ -48,7 +48,7 @@ wgpu       = { version = "22", features = ["metal"] }
 
 # Font / shaping
 rustybuzz    = "0.14"          # pure-Rust HarfBuzz port (no C dep)
-ttf-parser   = "0.21"
+ttf-parser   = "0.25"
 
 # Collections / cache
 lru        = "0.12"
