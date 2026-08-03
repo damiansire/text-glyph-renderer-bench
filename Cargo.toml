@@ -57,7 +57,7 @@ lru        = "0.12"
 serde_json = "1"
 
 # Benchmarking
-criterion  = { version = "0.5", features = ["html_reports"] }
+criterion  = { version = "0.8", features = ["html_reports"] }
 
 # Sin harfbuzz-sys / serde / winit: ningun crate del workspace los consumia.
 # 3A shapea con rustybuzz, ambos PoCs serializan con serde_json (que trae su
