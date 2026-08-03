@@ -49,3 +49,6 @@ _audits/
 .env
 .env.*
 !.env.example
+
+# Corpus de 1 MB que genera generate_testfile.py. Es derivado, no fuente.
+shared/test-data/ci_corpus.txt
