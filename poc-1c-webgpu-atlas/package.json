@@ -9,7 +9,7 @@
         "benchmark": "electron . --benchmark"
     },
     "dependencies": {
-        "electron": "^42.0.0"
+        "electron": "^44.0.0"
     },
     "license": "MIT"
 }
