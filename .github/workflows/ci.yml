@@ -94,9 +94,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # Node 24 (LTS activa): el step de unit tests le pasa un glob a
+      # `node --test` ("shared/**/*.test.js"), y la expansion de globs en
+      # `--test` existe desde Node 21; Node 20 lo toma como ruta literal y
+      # falla con "Could not find". Ademas Node 20 salio de soporte el
+      # 2026-04-30 y @electron/get 5 (dep de electron 42) declara
+      # engines node >=22.12.0.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 24
 
       # `npm ci` requires a lockfile; fall back to `npm install` for PoCs that
       # ship only a package.json.
