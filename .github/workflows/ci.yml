@@ -58,6 +58,27 @@ jobs:
       - name: Clippy (workspace)
         run: cargo clippy --workspace --all-targets --locked
 
+      # La fuente no se versiona (.gitignore: shared/fonts/*.ttf), pero los
+      # tests `default_font_path_resolves_to_a_real_file` (3A) y
+      # `default_font_resolves_to_a_real_file` (3B) verifican que el default
+      # del CLI resuelva a la fuente real, porque el orquestador invoca los
+      # binarios sin --font. Sin provisionarla, un checkout limpio los pone en
+      # rojo. Mismo bloque pineado que bench.yml y el README: si cambia el
+      # commit o el SHA-256, cambia en los tres.
+      - name: Get a test font (pinned + checksum)
+        run: |
+          mkdir -p shared/fonts
+          curl --fail --location --silent --show-error -o shared/fonts/InterVariable.ttf \
+            https://raw.githubusercontent.com/rsms/inter/353b61b9f4430d5f420d56605a6e7993e0941470/docs/font-files/InterVariable.ttf
+          python3 - <<'PY'
+          import hashlib, sys
+          expected = "4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf"
+          actual = hashlib.sha256(open("shared/fonts/InterVariable.ttf", "rb").read()).hexdigest()
+          if actual != expected:
+              sys.exit(f"font SHA-256 mismatch:\n  expected {expected}\n  got      {actual}")
+          print("font SHA-256 OK")
+          PY
+
       # Audit P8 / tgrb-1: run every Rust crate's tests, including poc-3b.
       # poc-3b's binary used to be excluded here because it crashed
       # (0xC0000005) — that crash predated the fix that made `build_scene`
