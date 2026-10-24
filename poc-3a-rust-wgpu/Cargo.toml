@@ -28,7 +28,7 @@ lru         = { workspace = true }
 # No esta en [workspace.dependencies]: es chiquita, sin deps propias, solo
 # bloquea sobre los dos `Future` que expone wgpu (request_adapter /
 # request_device) tanto en el CLI (--bench) como en los tests con GPU real.
-pollster    = "0.3"
+pollster    = "1.0"
 
 [dev-dependencies]
 font-test-data  = "0.4.1"
